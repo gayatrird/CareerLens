@@ -116,7 +116,7 @@ export const generateVerdict = async (mode, topic, rounds) => {
   content += `Round 2 Opposer: "${rounds[1].opposer}"\n`;
   content += `Round 3 Advocate: "${rounds[2].advocate}"\n`;
   content += `Round 3 Opposer: "${rounds[2].opposer}"\n\n`;
-  content += `Deliver your final verdict as judge.`;
+  content += `Deliver your final verdict as judge in the required JSON format.`;
 
   const systemPrompt = getVerdictSystemPrompt();
 
@@ -133,7 +133,7 @@ export const generateVerdict = async (mode, topic, rounds) => {
         { role: 'user', content: content }
       ],
       temperature: 0.2,
-      max_tokens: 350,
+      max_tokens: 1000,
       response_format: { type: "json_object" }
     })
   });
@@ -186,7 +186,7 @@ No other text.`;
       model: MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Score this argument: "${text}"` }
+        { role: 'user', content: `Score this argument: "${text}" in the requested JSON format.` }
       ],
       temperature: 0.1,
       response_format: { type: "json_object" }
@@ -223,7 +223,7 @@ Respond ONLY in this JSON format:
   if (rounds[1]) content += `Round 2: ${leftPersonaName} said "${rounds[1].advocate}" | ${rightPersonaName} said "${rounds[1].opposer}"\n`;
   if (rounds[2]) content += `Round 3: ${leftPersonaName} said "${rounds[2].advocate}" | ${rightPersonaName} said "${rounds[2].opposer}"\n\n`;
   content += `Original verdict: "${originalVerdict}" (Clarity Score: ${score})\n\n`;
-  content += `Appellant's grounds for appeal: "${userAppealText}"\n\nDeliver your final ruling.`;
+  content += `Appellant's grounds for appeal: "${userAppealText}"\n\nDeliver your final ruling in the required JSON format.`;
 
   const response = await fetch(API_URL, {
     method: 'POST',
