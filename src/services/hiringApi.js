@@ -1,0 +1,327 @@
+import { companyContexts } from '../config/agents';
+
+const API_URL = '/api/groq/openai/v1/chat/completions';
+const MODEL = 'llama-3.3-70b-versatile';
+
+const cleanText = (text) => {
+  if (!text) return '';
+  return text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
+};
+
+const getCompanyContext = (companyMode) => {
+  return companyContexts[companyMode] || companyContexts.general;
+};
+
+// ─── AGENT SYSTEM PROMPTS ──────────────────────────────────────────────────
+
+const getAgentSystemPrompt = (agentId, companyMode) => {
+  const companyCtx = getCompanyContext(companyMode);
+  const companyNote = companyCtx ? `\n\nCOMPANY-SPECIFIC CONTEXT: ${companyCtx}` : '';
+
+  const prompts = {
+    ats: `You are an ATS (Applicant Tracking System) engine. Analyze the resume against the job description for keyword matches, section completeness, formatting quality, and ATS compatibility.${companyNote}
+
+Respond ONLY in this exact JSON format with no extra text:
+{
+  "score": <0-100>,
+  "missingKeywords": ["keyword1", "keyword2", "keyword3"],
+  "presentKeywords": ["keyword1", "keyword2"],
+  "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
+  "formattingIssues": "one sentence about formatting",
+  "sectionQuality": "one sentence about section completeness",
+  "summary": "2-3 sentences on overall ATS compatibility"
+}`,
+
+    recruiter: `You are a senior technical recruiter. Evaluate the resume against the job description by reviewing projects, skills, tech stack alignment, and overall experience relevance.${companyNote}
+
+Respond ONLY in this exact JSON format with no extra text:
+{
+  "score": <0-100>,
+  "strongProjects": ["project or achievement 1", "project or achievement 2"],
+  "weakProjects": ["area 1", "area 2"],
+  "missingExperience": ["missing exp 1", "missing exp 2"],
+  "techStackAlignment": "one sentence on tech stack match",
+  "experienceRelevance": "one sentence on experience relevance",
+  "summary": "2-3 sentences on overall candidacy from a recruiter perspective"
+}`,
+
+    engineer: `You are a Staff Software Engineer conducting a technical resume review. Analyze the technical depth, architecture thinking, project complexity, and identify likely interview topics and weak areas.${companyNote}
+
+Respond ONLY in this exact JSON format with no extra text:
+{
+  "score": <0-100>,
+  "likelyInterviewQuestions": ["question 1?", "question 2?", "question 3?", "question 4?", "question 5?"],
+  "weakTechnicalAreas": ["area 1", "area 2", "area 3"],
+  "strongTechnicalAreas": ["area 1", "area 2"],
+  "architectureObservation": "one sentence about system design or architecture signals",
+  "summary": "2-3 sentences on overall technical depth"
+}`,
+
+    manager: `You are a Hiring Manager making the final shortlist decision. Evaluate the resume holistically for communication clarity, achievement quantification, leadership signals, and overall fit.${companyNote}
+
+Respond ONLY in this exact JSON format with no extra text:
+{
+  "decision": "HIRE" or "MAYBE" or "REJECT",
+  "score": <0-100>,
+  "reasons": ["reason 1", "reason 2", "reason 3"],
+  "communicationClarity": "one sentence assessment",
+  "achievementStrength": "one sentence on how well achievements are quantified",
+  "summary": "2-3 sentences on overall shortlist decision reasoning"
+}`,
+
+    optimizer: `You are an expert resume writer and career coach. Rewrite the resume bullet points for maximum impact using the STAR method and strong action verbs. STRICT RULES: Never fabricate experience. Never invent skills. Only improve language, structure, and measurability of existing content.${companyNote}
+
+Respond ONLY in this exact JSON format with no extra text:
+{
+  "improvedBullets": [
+    {"original": "original bullet text", "improved": "rewritten bullet with metrics and impact"},
+    {"original": "original bullet text", "improved": "rewritten bullet with metrics and impact"},
+    {"original": "original bullet text", "improved": "rewritten bullet with metrics and impact"}
+  ],
+  "writingTips": ["tip 1", "tip 2", "tip 3"],
+  "overallImpactScore": <0-100>,
+  "summary": "2 sentences on the main areas of improvement"
+}`
+  };
+
+  return prompts[agentId] || prompts.ats;
+};
+
+const getFinalRecommendationPrompt = () => {
+  return `You are the Chief Talent Officer synthesizing all hiring expert reviews into a final hiring recommendation. Analyze all agent scores and findings and deliver a definitive recommendation.
+
+Respond ONLY in this exact JSON format with no extra text:
+{
+  "overallMatch": <0-100>,
+  "recommendation": "SHORTLIST" or "MAYBE" or "NOT_ALIGNED",
+  "actionableTakeaway": "One powerful sentence under 12 words",
+  "keyStrengths": ["strength 1 full sentence", "strength 2 full sentence", "strength 3 full sentence"],
+  "keyWeaknesses": ["weakness 1 full sentence", "weakness 2 full sentence", "weakness 3 full sentence"],
+  "hiringInsight": "2-3 sentences of final synthesis",
+  "nextStep": "One concrete next step the candidate should take"
+}`;
+};
+
+const getInterviewQuestionsPrompt = () => {
+  return `You are a senior technical interviewer at a top tech company. Generate targeted interview questions based on the candidate's resume and the specific job description. Questions must reference specific projects, technologies, and experiences from the resume.
+
+Respond ONLY in this exact JSON format with no extra text:
+{
+  "behavioral": [
+    {"question": "full question text?", "context": "why this question is asked"},
+    {"question": "full question text?", "context": "why this question is asked"},
+    {"question": "full question text?", "context": "why this question is asked"}
+  ],
+  "technical": [
+    {"question": "full question text?", "context": "why this question is asked"},
+    {"question": "full question text?", "context": "why this question is asked"},
+    {"question": "full question text?", "context": "why this question is asked"},
+    {"question": "full question text?", "context": "why this question is asked"}
+  ],
+  "projectSpecific": [
+    {"question": "full question text?", "context": "why this question is asked"},
+    {"question": "full question text?", "context": "why this question is asked"},
+    {"question": "full question text?", "context": "why this question is asked"}
+  ]
+}`;
+};
+
+// ─── CORE API CALL ──────────────────────────────────────────────────────────
+
+const callGroq = async (systemPrompt, userContent, options = {}, retries = 10) => {
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey) throw new Error("Groq API key is missing");
+
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ],
+      temperature: options.temperature ?? 0.3,
+      max_tokens: options.maxTokens ?? 1200,
+      response_format: { type: "json_object" }
+    })
+  });
+
+  if (!response.ok) {
+    let errorDetail = response.statusText;
+    let is429 = response.status === 429;
+    try {
+      const err = await response.json();
+      errorDetail = err.error?.message || errorDetail;
+    } catch (e) { /* ignore */ }
+
+    if (is429 && retries > 0) {
+      let waitMs = 5500;
+      const waitMatch = errorDetail.match(/try again in (\d+(\.\d+)?)s/);
+      if (waitMatch && waitMatch[1]) {
+        waitMs = (parseFloat(waitMatch[1]) * 1000) + 200; // parse wait time + 200ms buffer
+      }
+      console.warn(`Groq 429 Rate Limit hit. Retrying in ${Math.round(waitMs/100)/10} seconds... (${retries} retries left)`);
+      await new Promise(r => setTimeout(r, waitMs));
+      return callGroq(systemPrompt, userContent, options, retries - 1);
+    }
+
+    throw new Error(`Groq API Error: ${response.status} - ${errorDetail}`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+};
+
+// ─── EXPORTED FUNCTIONS ─────────────────────────────────────────────────────
+
+/**
+ * Run a single hiring agent analysis
+ */
+export const analyzeWithAgent = async (agentId, resumeText, jobDescription, companyMode = 'general') => {
+  const systemPrompt = getAgentSystemPrompt(agentId, companyMode);
+
+  const safeResume = resumeText?.substring(0, 2000) || '';
+  const safeJD = jobDescription?.substring(0, 2000) || '';
+
+  const userContent = `RESUME:
+${safeResume}
+
+JOB DESCRIPTION:
+${safeJD}
+
+Analyze this resume against the job description and return your findings in the required JSON format.`;
+
+  const rawResponse = await callGroq(systemPrompt, userContent, {
+    temperature: agentId === 'optimizer' ? 0.5 : 0.25,
+    maxTokens: agentId === 'optimizer' ? 600 : 350
+  });
+
+  try {
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    console.error(`Failed to parse ${agentId} response:`, e, rawResponse);
+    throw new Error(`Failed to parse ${agentId} analysis`);
+  }
+};
+
+/**
+ * Generate final hiring recommendation from all agent results
+ */
+export const generateHiringRecommendation = async (resumeText, jobDescription, agentResults, companyMode = 'general') => {
+  const companyCtx = getCompanyContext(companyMode);
+  const systemPrompt = getFinalRecommendationPrompt();
+
+  const safeResume = resumeText?.substring(0, 1500) || '';
+  const safeJD = jobDescription?.substring(0, 1500) || '';
+
+  const userContent = `RESUME SUMMARY:
+${safeResume.substring(0, 500)}...
+
+JOB DESCRIPTION:
+${safeJD}
+
+${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}ATS ANALYSIS:
+Score: ${agentResults.ats?.score ?? 'N/A'}
+Missing Keywords: ${(agentResults.ats?.missingKeywords || []).join(', ')}
+Summary: ${agentResults.ats?.summary ?? ''}
+
+RECRUITER REVIEW:
+Score: ${agentResults.recruiter?.score ?? 'N/A'}
+Strong Projects: ${(agentResults.recruiter?.strongProjects || []).join(', ')}
+Summary: ${agentResults.recruiter?.summary ?? ''}
+
+TECHNICAL DEPTH:
+Score: ${agentResults.engineer?.score ?? 'N/A'}
+Weak Areas: ${(agentResults.engineer?.weakTechnicalAreas || []).join(', ')}
+Summary: ${agentResults.engineer?.summary ?? ''}
+
+HIRING MANAGER DECISION:
+Decision: ${agentResults.manager?.decision ?? 'N/A'}
+Score: ${agentResults.manager?.score ?? 'N/A'}
+Summary: ${agentResults.manager?.summary ?? ''}
+
+RESUME OPTIMIZATION:
+Impact Score: ${agentResults.optimizer?.overallImpactScore ?? 'N/A'}
+Summary: ${agentResults.optimizer?.summary ?? ''}
+
+Synthesize all expert reviews and deliver your final hiring recommendation in the required JSON format.`;
+
+  const rawResponse = await callGroq(systemPrompt, userContent, {
+    temperature: 0.2,
+    maxTokens: 400
+  });
+
+  try {
+    const parsed = JSON.parse(rawResponse);
+    return {
+      overallMatch: Number(parsed.overallMatch || 50),
+      recommendation: parsed.recommendation || 'MAYBE',
+      actionableTakeaway: cleanText(parsed.actionableTakeaway || ''),
+      keyStrengths: Array.isArray(parsed.keyStrengths) ? parsed.keyStrengths.map(cleanText) : [],
+      keyWeaknesses: Array.isArray(parsed.keyWeaknesses) ? parsed.keyWeaknesses.map(cleanText) : [],
+      hiringInsight: cleanText(parsed.hiringInsight || ''),
+      nextStep: cleanText(parsed.nextStep || '')
+    };
+  } catch (e) {
+    console.error("Failed to parse final recommendation:", e, rawResponse);
+    throw new Error("Failed to parse hiring recommendation");
+  }
+};
+
+/**
+ * Generate targeted interview questions
+ */
+export const generateInterviewQuestions = async (resumeText, jobDescription, companyMode = 'general') => {
+  const companyCtx = getCompanyContext(companyMode);
+  const systemPrompt = getInterviewQuestionsPrompt();
+
+  const safeResume = resumeText?.substring(0, 1500) || '';
+  const safeJD = jobDescription?.substring(0, 1500) || '';
+
+  const userContent = `RESUME:
+${safeResume}
+
+JOB DESCRIPTION:
+${safeJD}
+
+${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}Generate targeted interview questions that specifically reference this candidate's projects, technologies, and experiences as listed in their resume. Make questions highly specific, not generic.`;
+
+  const rawResponse = await callGroq(systemPrompt, userContent, {
+    temperature: 0.4,
+    maxTokens: 700
+  });
+
+  try {
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    console.error("Failed to parse interview questions:", e, rawResponse);
+    throw new Error("Failed to parse interview questions");
+  }
+};
+
+/**
+ * Score a resume section (used for live scoring during analysis)
+ */
+export const scoreResumeSection = async (text, dimension = 'overall') => {
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey) return { ats: 50, technical: 50, communication: 50 };
+
+  const systemPrompt = `You are a resume evaluator. Score this resume text on three dimensions.
+Respond ONLY in this exact JSON:
+{"ats": <0-100>, "technical": <0-100>, "communication": <0-100>}
+No other text.`;
+
+  try {
+    const rawResponse = await callGroq(systemPrompt, `Score this resume section: "${text.substring(0, 300)}"`, {
+      temperature: 0.1,
+      maxTokens: 60
+    });
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    return { ats: 50, technical: 50, communication: 50 };
+  }
+};

@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TypewriterText from './TypewriterText';
-import Scoreboard from './Scoreboard';
-import ScoreBars from './ScoreBars';
-import { scoreArgument } from '../services/claudeApi';
 
 function ThinkingDots({ colorClass }) {
   return (
@@ -14,224 +11,249 @@ function ThinkingDots({ colorClass }) {
   );
 }
 
-function AdvocateBubble({ roundNum, slot, isThinking, persona, onScoreCalculated }) {
-  const bubbleRef = useRef(null);
-  const [typed, setTyped] = useState(false);
-  const [flash, setFlash] = useState(false);
-  const [scores, setScores] = useState(null);
+function AgentScoreBar({ label, score, color }) {
+  const [currentScore, setCurrentScore] = useState(0);
 
   useEffect(() => {
-    if ((isThinking || slot?.advocate) && bubbleRef.current) {
-      if (window.innerWidth < 768) {
-        bubbleRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  }, [isThinking, slot?.advocate]);
-
-  const handleComplete = async () => {
-    setTyped(true);
-    setFlash(true);
-    setTimeout(() => setFlash(false), 500);
-    // Score the argument
-    const result = await scoreArgument(slot.advocate);
-    setScores(result);
-    onScoreCalculated('advocate', result);
-  };
-
-  const hasContent = !!slot?.advocate;
+    if (score == null) return;
+    let start = 0;
+    const duration = 800;
+    const startTime = performance.now();
+    const animate = (time) => {
+      const elapsed = time - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      setCurrentScore(Math.floor(progress * score));
+      if (progress < 1) requestAnimationFrame(animate);
+      else setCurrentScore(score);
+    };
+    requestAnimationFrame(animate);
+  }, [score]);
 
   return (
-    <div className="relative" style={{ minHeight: '6rem' }} ref={bubbleRef}>
-      <span className="font-label-caps text-[8px] text-primary/50 absolute -top-4 left-0">ROUND {roundNum}</span>
+    <div className="flex items-center gap-3">
+      <span className="w-24 text-[10px] font-label-caps text-slate-500 uppercase tracking-widest text-left">{label}</span>
+      <div className="flex-1 h-1.5 bg-black/40 rounded-full overflow-hidden relative">
+        <div
+          className="h-full rounded-full absolute left-0 top-0"
+          style={{
+            width: `${currentScore}%`,
+            backgroundColor: color,
+            boxShadow: `0 0 8px ${color}80`,
+            transition: 'width 800ms cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+        />
+      </div>
+      <span className="w-8 text-right text-xs font-bold" style={{ color }}>{currentScore}</span>
+    </div>
+  );
+}
+
+function AgentResultCard({ agent, result, isThinking, cardRef }) {
+  const [typed, setTyped] = useState(false);
+
+  const hasContent = !!result?.summary;
+
+  const getResultPreview = () => {
+    if (!result) return '';
+    if (result.summary) return result.summary;
+    if (result.decision) return `Decision: ${result.decision}. ${result.reasons?.[0] || ''}`;
+    return '';
+  };
+
+  const getScore = () => {
+    if (!result) return null;
+    return result.score ?? result.overallImpactScore ?? null;
+  };
+
+  const score = getScore();
+
+  return (
+    <div className="relative" ref={cardRef}>
       {isThinking ? (
-        <div className="glass-panel p-6 rounded-2xl rounded-tl-sm h-full flex items-center gap-4 relative overflow-hidden" style={{ borderLeft: `4px solid ${persona.color}` }}>
-          <div className="absolute inset-0 opacity-10 bg-gradient-to-r from-white to-transparent pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, ${persona.color}, transparent)` }}></div>
-          <ThinkingDots colorClass="bg-white/80" />
-          <span className="text-sm font-label-caps tracking-wider" style={{ color: persona.color }}>Composing argument...</span>
+        <div
+          className="glass-panel p-6 rounded-2xl flex items-center gap-4 relative overflow-hidden"
+          style={{ borderLeft: `4px solid ${agent.color}` }}
+        >
+          <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, ${agent.color}, transparent)` }}></div>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center border" style={{ borderColor: `${agent.color}60`, backgroundColor: `${agent.color}15` }}>
+            <span className="material-symbols-outlined text-lg" style={{ color: agent.color }}>{agent.icon}</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="font-label-caps text-xs" style={{ color: agent.color }}>{agent.name}</span>
+            <div className="flex items-center gap-2">
+              <ThinkingDots colorClass="bg-white/50" />
+              <span className="text-xs text-slate-400 animate-pulse">{agent.thinkingLabel}</span>
+            </div>
+          </div>
         </div>
       ) : hasContent ? (
-        <div className={`argument-bubble glass-panel p-6 md:p-8 rounded-2xl rounded-tl-sm relative overflow-hidden animate-slide-in-left transition-all duration-500`} style={{ borderLeft: `4px solid ${flash ? '#c9a84c' : persona.color}`, boxShadow: `0 10px 40px -10px ${persona.color}20` }}>
-          <div className="absolute top-0 left-0 w-full h-full opacity-5 pointer-events-none" style={{ background: `radial-gradient(circle at top left, ${persona.color}, transparent 60%)` }}></div>
-          <span className="absolute -top-4 right-2 opacity-10 text-[120px] font-serif-large leading-none select-none pointer-events-none" style={{ color: persona.color }}>"</span>
-          <div className="text-body-rt text-[18px] md:text-[20px] leading-relaxed relative z-10 text-slate-200">
-            "{!typed ? <TypewriterText text={slot.advocate} onComplete={handleComplete} cursorClass="text-primary/50" /> : slot.advocate}"
+        <div
+          className="argument-bubble glass-panel p-6 md:p-8 rounded-2xl relative overflow-hidden animate-slide-in-left"
+          style={{ borderLeft: `4px solid ${agent.color}`, boxShadow: `0 10px 40px -10px ${agent.color}20` }}
+        >
+          <div className="absolute top-0 left-0 w-full h-full opacity-5 pointer-events-none" style={{ background: `radial-gradient(circle at top left, ${agent.color}, transparent 60%)` }}></div>
+
+          {/* Agent header */}
+          <div className="flex items-center justify-between mb-5 relative z-10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center border" style={{ borderColor: `${agent.color}60`, backgroundColor: `${agent.color}15` }}>
+                <span className="material-symbols-outlined text-lg" style={{ color: agent.color, fontVariationSettings: "'FILL' 1" }}>{agent.icon}</span>
+              </div>
+              <div>
+                <p className="font-label-caps text-xs tracking-widest" style={{ color: agent.color }}>{agent.name}</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider">{agent.role}</p>
+              </div>
+            </div>
+            {score != null && (
+              <div className="text-right">
+                <span className="text-2xl font-black" style={{ color: agent.color }}>{score}</span>
+                <p className="text-[10px] text-slate-500 font-label-caps">/ 100</p>
+              </div>
+            )}
           </div>
-          {typed && (
-            <div className="text-right mt-6 animate-fade-in-up">
-              <span className="text-[12px] font-label-caps tracking-widest px-3 py-1 rounded-full bg-black/20 border border-white/5" style={{ color: persona.color }}>— {persona.name} {persona.emoji}</span>
+
+          {/* Summary text */}
+          <div className="text-body-rt text-[16px] leading-relaxed relative z-10 text-slate-300 mb-4">
+            {!typed
+              ? <TypewriterText text={getResultPreview()} onComplete={() => setTyped(true)} cursorClass="text-primary/50" speed={10} />
+              : getResultPreview()
+            }
+          </div>
+
+          {/* Score bars after typing */}
+          {typed && agent.id !== 'optimizer' && score != null && (
+            <div className="space-y-2 border-t border-white/5 pt-4 animate-fade-in-up">
+              <AgentScoreBar label={agent.scoreLabel} score={score} color={agent.color} />
             </div>
           )}
-          {scores && <ScoreBars scores={scores} personaColor={persona.color} />}
+
+          {/* Decision badge for manager */}
+          {typed && result?.decision && (
+            <div className="mt-4 animate-fade-in-up">
+              <span className={`inline-block px-4 py-1.5 rounded-full font-label-caps text-xs tracking-widest border ${
+                result.decision === 'HIRE' ? 'bg-green-500/15 border-green-500/50 text-green-400' :
+                result.decision === 'REJECT' ? 'bg-red-500/15 border-red-500/50 text-red-400' :
+                'bg-amber-500/15 border-amber-500/50 text-amber-400'
+              }`}>
+                {result.decision === 'HIRE' ? '✓ SHORTLIST' : result.decision === 'REJECT' ? '✗ NOT ALIGNED' : '~ POSSIBLE FIT'}
+              </span>
+            </div>
+          )}
+
+          {/* Key points for ATS / Recruiter / Engineer */}
+          {typed && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 animate-fade-in-up">
+              {agent.id === 'ats' && result.missingKeywords?.length > 0 && (
+                <div className="bg-black/30 rounded-xl p-4 border border-white/5">
+                  <p className="font-label-caps text-[10px] text-red-400 mb-2 tracking-widest">MISSING KEYWORDS</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {result.missingKeywords.slice(0, 6).map((kw, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-red-500/10 border border-red-500/30 rounded text-[10px] text-red-400 font-label-caps">{kw}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {agent.id === 'ats' && result.presentKeywords?.length > 0 && (
+                <div className="bg-black/30 rounded-xl p-4 border border-white/5">
+                  <p className="font-label-caps text-[10px] text-green-400 mb-2 tracking-widest">MATCHED KEYWORDS</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {result.presentKeywords.slice(0, 6).map((kw, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-green-500/10 border border-green-500/30 rounded text-[10px] text-green-400 font-label-caps">{kw}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {agent.id === 'engineer' && result.likelyInterviewQuestions?.length > 0 && (
+                <div className="bg-black/30 rounded-xl p-4 border border-white/5 col-span-full">
+                  <p className="font-label-caps text-[10px] text-primary/70 mb-2 tracking-widest">LIKELY INTERVIEW QUESTIONS</p>
+                  <ul className="space-y-1">
+                    {result.likelyInterviewQuestions.slice(0, 3).map((q, i) => (
+                      <li key={i} className="text-[12px] text-slate-400 flex gap-2">
+                        <span className="text-primary/50 shrink-0">›</span>
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {agent.id === 'optimizer' && result.improvedBullets?.length > 0 && (
+                <div className="bg-black/30 rounded-xl p-4 border border-white/5 col-span-full">
+                  <p className="font-label-caps text-[10px] text-primary/70 mb-3 tracking-widest">IMPROVED BULLETS</p>
+                  <div className="space-y-3">
+                    {result.improvedBullets.slice(0, 2).map((b, i) => (
+                      <div key={i} className="space-y-1">
+                        <p className="text-[11px] text-slate-600 line-through">{b.original}</p>
+                        <p className="text-[12px] text-green-400 flex gap-1.5"><span className="shrink-0">→</span> {b.improved}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="glass-panel p-6 rounded-2xl rounded-tl-sm h-full flex items-center opacity-50" style={{ borderLeft: `4px solid ${persona.color}30` }}>
-          <p className="text-sm font-label-caps tracking-wider text-slate-500">Awaiting argument...</p>
+        <div className="glass-panel p-5 rounded-2xl flex items-center gap-3 opacity-30" style={{ borderLeft: `4px solid ${agent.color}25` }}>
+          <span className="material-symbols-outlined text-slate-600 text-lg">{agent.icon}</span>
+          <p className="text-sm font-label-caps tracking-wider text-slate-600">Awaiting {agent.name}...</p>
         </div>
       )}
     </div>
   );
 }
 
-function OpposerBubble({ roundNum, slot, isThinking, persona, onScoreCalculated }) {
-  const bubbleRef = useRef(null);
-  const [typed, setTyped] = useState(false);
-  const [flash, setFlash] = useState(false);
-  const [scores, setScores] = useState(null);
+export default function AnalysisSection({ agents, agentResults, activeAgent, overallScore }) {
+  const cardRefs = useRef({});
 
   useEffect(() => {
-    if ((isThinking || slot?.opposer) && bubbleRef.current) {
-      if (window.innerWidth < 768) {
-        bubbleRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+    if (activeAgent && cardRefs.current[activeAgent]) {
+      cardRefs.current[activeAgent].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [isThinking, slot?.opposer]);
-
-  const handleComplete = async () => {
-    setTyped(true);
-    setFlash(true);
-    setTimeout(() => setFlash(false), 500);
-    const result = await scoreArgument(slot.opposer);
-    setScores(result);
-    onScoreCalculated('opposer', result);
-  };
-
-  const hasContent = !!slot?.opposer;
+  }, [activeAgent]);
 
   return (
-    <div className="relative" style={{ minHeight: '6rem' }} ref={bubbleRef}>
-      <span className="font-label-caps text-[8px] text-primary/50 absolute -top-4 right-0">ROUND {roundNum}</span>
-      {isThinking ? (
-        <div className="glass-panel p-6 rounded-2xl rounded-tr-sm text-right h-full flex items-center justify-end gap-4 relative overflow-hidden" style={{ borderRight: `4px solid ${persona.color}` }}>
-          <div className="absolute inset-0 opacity-10 bg-gradient-to-l from-white to-transparent pointer-events-none" style={{ backgroundImage: `linear-gradient(to left, ${persona.color}, transparent)` }}></div>
-          <span className="text-sm font-label-caps tracking-wider" style={{ color: persona.color }}>Preparing counter...</span>
-          <ThinkingDots colorClass="bg-white/80" />
-        </div>
-      ) : hasContent ? (
-        <div className={`argument-bubble glass-panel p-6 md:p-8 rounded-2xl rounded-tr-sm text-right relative overflow-hidden animate-slide-in-right transition-all duration-500`} style={{ borderRight: `4px solid ${flash ? '#c9a84c' : persona.color}`, boxShadow: `0 10px 40px -10px ${persona.color}20` }}>
-          <div className="absolute top-0 right-0 w-full h-full opacity-5 pointer-events-none" style={{ background: `radial-gradient(circle at top right, ${persona.color}, transparent 60%)` }}></div>
-          <span className="absolute -top-4 left-2 opacity-10 text-[120px] font-serif-large leading-none select-none pointer-events-none" style={{ color: persona.color }}>"</span>
-          <div className="text-body-rt text-[18px] md:text-[20px] leading-relaxed relative z-10 text-slate-200">
-            "{!typed ? <TypewriterText text={slot.opposer} onComplete={handleComplete} cursorClass="text-primary/50" /> : slot.opposer}"
+    <div className="mb-20 max-w-3xl mx-auto">
+      {/* Overall progress header */}
+      {overallScore > 0 && (
+        <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-5 mb-8 flex items-center justify-between animate-fade-in-up shadow-[0_8px_30px_rgba(0,0,0,0.25)]">
+          <div>
+            <p className="font-label-caps text-[#71717A] text-[10px] tracking-widest mb-1">RUNNING MATCH SCORE</p>
+            <p className="text-3xl font-black text-[#5B8CFF]">{overallScore}<span className="text-lg text-[#5B8CFF]/50">%</span></p>
           </div>
-          {typed && (
-            <div className="text-left mt-6 animate-fade-in-up">
-              <span className="text-[12px] font-label-caps tracking-widest px-3 py-1 rounded-full bg-black/20 border border-white/5" style={{ color: persona.color }}>{persona.emoji} {persona.name} —</span>
-            </div>
-          )}
-          {scores && <ScoreBars scores={scores} personaColor={persona.color} />}
-        </div>
-      ) : (
-        <div className="glass-panel p-6 rounded-2xl rounded-tr-sm text-right h-full flex items-center justify-end opacity-50" style={{ borderRight: `4px solid ${persona.color}30` }}>
-          <p className="text-sm font-label-caps tracking-wider text-slate-500">Awaiting argument...</p>
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[#5B8CFF] animate-pulse" style={{ fontVariationSettings: "'FILL' 1" }}>analytics</span>
+            <span className="font-label-caps text-[#71717A] text-xs tracking-wider">ANALYZING</span>
+          </div>
         </div>
       )}
-    </div>
-  );
-}
 
-export default function ArgumentsSection({ 
-  rounds = [], 
-  activeAgent, 
-  leftPersona, 
-  rightPersona,
-  leftScoreTotal,
-  leftScoreCount,
-  rightScoreTotal,
-  rightScoreCount,
-  onArgumentScored
-}) {
-  const getSlot = (n) => rounds.find(r => r.round === n) || null;
+      {/* Agent cards */}
+      <div className="flex flex-col gap-6">
+        {agents.map((agent) => {
+          const isThinking = activeAgent === agent.id && !agentResults[agent.id];
+          const result = agentResults[agent.id] || null;
+          const hasStarted = isThinking || !!result;
 
-  const isAdvocateThinking = (roundNum) => {
-    const slot = getSlot(roundNum);
-    return activeAgent === 'advocate' && rounds.length === roundNum && !slot?.advocate;
-  };
+          if (!hasStarted) {
+            return (
+              <div key={agent.id} className="glass-panel p-5 rounded-2xl flex items-center gap-3 opacity-25" style={{ borderLeft: `4px solid ${agent.color}20` }}>
+                <span className="material-symbols-outlined text-slate-700 text-lg">{agent.icon}</span>
+                <p className="text-xs font-label-caps tracking-wider text-slate-700">{agent.name}</p>
+              </div>
+            );
+          }
 
-  const isOpposerThinking = (roundNum) => {
-    const slot = getSlot(roundNum);
-    return activeAgent === 'opposer' && rounds.length === roundNum && !!slot?.advocate && !slot?.opposer;
-  };
-
-  const leftAvg = leftScoreCount > 0 ? Math.round(leftScoreTotal / leftScoreCount) : 0;
-  const rightAvg = rightScoreCount > 0 ? Math.round(rightScoreTotal / rightScoreCount) : 0;
-
-  return (
-    <div className="mb-20">
-      <Scoreboard leftPersona={leftPersona} rightPersona={rightPersona} leftScore={leftAvg} rightScore={rightAvg} />
-
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-12 items-start" style={{ gridAutoRows: 'auto' }}>
-        <div className="glass-panel rounded-2xl p-6 md:p-8 relative overflow-hidden group flex flex-col" style={{ borderTop: `1px solid ${leftPersona?.color}30`, boxShadow: `0 10px 30px ${leftPersona?.color}05` }}>
-          <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: `${leftPersona?.color}10` }}>
-            {activeAgent === 'advocate' && (
-              <div className="h-full" style={{
-                backgroundColor: leftPersona?.color,
-                boxShadow: `0 0 15px ${leftPersona?.color}`,
-                width: '0%',
-                animation: 'fillProgress 15s ease-out forwards'
-              }}></div>
-            )}
-          </div>
-          <div className="absolute inset-0 pointer-events-none z-0 opacity-20" style={{ background: `radial-gradient(circle at top left, ${leftPersona?.color}, transparent 70%)` }}></div>
-          <div className="flex items-center gap-4 z-10 relative">
-            <div className={`w-4 h-4 rounded-full ${activeAgent === 'advocate' ? 'animate-pulse' : 'opacity-30'}`} style={{ backgroundColor: leftPersona?.color, boxShadow: `0 0 15px ${leftPersona?.color}` }}></div>
-            <span className="text-xl">{leftPersona?.emoji}</span>
-            <h3 className="font-serif-large uppercase tracking-widest text-2xl" style={{ color: leftPersona?.color }}>{leftPersona?.name}</h3>
-          </div>
-          {activeAgent === 'advocate' && (
-            <p className="text-[11px] font-label-caps mt-3 animate-pulse z-10 relative tracking-[0.2em] opacity-80" style={{ color: leftPersona?.color }}>
-              ● {leftPersona?.name.toUpperCase()} IS BUILDING CASE...
-            </p>
-          )}
-        </div>
-
-        <div className="glass-panel rounded-2xl p-6 md:p-8 relative overflow-hidden group text-right flex flex-col" style={{ borderTop: `1px solid ${rightPersona?.color}30`, boxShadow: `0 10px 30px ${rightPersona?.color}05` }}>
-          <div className="absolute top-0 left-0 right-0 h-1 flex justify-end" style={{ backgroundColor: `${rightPersona?.color}10` }}>
-            {activeAgent === 'opposer' && (
-              <div className="h-full" style={{
-                backgroundColor: rightPersona?.color,
-                boxShadow: `0 0 15px ${rightPersona?.color}`,
-                width: '0%',
-                animation: 'fillProgress 15s ease-out forwards'
-              }}></div>
-            )}
-          </div>
-          <div className="absolute inset-0 pointer-events-none z-0 opacity-20" style={{ background: `radial-gradient(circle at top right, ${rightPersona?.color}, transparent 70%)` }}></div>
-          <div className="flex items-center gap-4 justify-end z-10 relative">
-            <h3 className="font-serif-large uppercase tracking-widest text-2xl" style={{ color: rightPersona?.color }}>{rightPersona?.name}</h3>
-            <span className="text-xl">{rightPersona?.emoji}</span>
-            <div className={`w-4 h-4 rounded-full ${activeAgent === 'opposer' ? 'animate-pulse' : 'opacity-30'}`} style={{ backgroundColor: rightPersona?.color, boxShadow: `0 0 15px ${rightPersona?.color}` }}></div>
-          </div>
-          {activeAgent === 'opposer' && (
-            <p className="text-[11px] font-label-caps mt-3 animate-pulse z-10 relative text-right tracking-[0.2em] opacity-80" style={{ color: rightPersona?.color }}>
-              {rightPersona?.name.toUpperCase()} IS PREPARING COUNTER... ●
-            </p>
-          )}
-        </div>
-
-        {/* Row 2: Round 1 */}
-        <div className="relative pt-4">
-          <AdvocateBubble roundNum={1} slot={getSlot(1)} isThinking={isAdvocateThinking(1)} persona={leftPersona} onScoreCalculated={onArgumentScored} />
-        </div>
-        <div className="relative pt-4">
-          <OpposerBubble roundNum={1} slot={getSlot(1)} isThinking={isOpposerThinking(1)} persona={rightPersona} onScoreCalculated={onArgumentScored} />
-        </div>
-
-        {/* Row 3: Round 2 */}
-        <div className="relative pt-4">
-          <AdvocateBubble roundNum={2} slot={getSlot(2)} isThinking={isAdvocateThinking(2)} persona={leftPersona} onScoreCalculated={onArgumentScored} />
-        </div>
-        <div className="relative pt-4">
-          <OpposerBubble roundNum={2} slot={getSlot(2)} isThinking={isOpposerThinking(2)} persona={rightPersona} onScoreCalculated={onArgumentScored} />
-        </div>
-
-        {/* Row 4: Round 3 */}
-        <div className="relative pt-4">
-          <AdvocateBubble roundNum={3} slot={getSlot(3)} isThinking={isAdvocateThinking(3)} persona={leftPersona} onScoreCalculated={onArgumentScored} />
-        </div>
-        <div className="relative pt-4">
-          <OpposerBubble roundNum={3} slot={getSlot(3)} isThinking={isOpposerThinking(3)} persona={rightPersona} onScoreCalculated={onArgumentScored} />
-        </div>
-      </section>
+          return (
+            <AgentResultCard
+              key={agent.id}
+              agent={agent}
+              result={result}
+              isThinking={isThinking}
+              cardRef={(el) => { cardRefs.current[agent.id] = el; }}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

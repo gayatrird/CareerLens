@@ -1,75 +1,69 @@
 import React from 'react';
 
-export default function RoundIndicators({ rounds = [], isComplete = false }) {
-  // A round is "completed" when both advocate and opposer text are present
-  const completedCount = rounds.filter(r => r.advocate && r.opposer).length;
+const STEPS = [
+  { num: 1, label: 'ATS', icon: 'manage_search' },
+  { num: 2, label: 'RECRUITER', icon: 'person_search' },
+  { num: 3, label: 'ENGINEER', icon: 'code' },
+  { num: 4, label: 'MANAGER', icon: 'supervisor_account' },
+  { num: 5, label: 'OPTIMIZER', icon: 'auto_fix_high' },
+  { num: 6, label: 'RESULT', icon: 'analytics' },
+];
 
-  // activeStep: 1 to 4
-  const activeStep = isComplete ? 4 : Math.min(completedCount + 1, 4);
-
-  // Progress bar logic:
-  // 4 steps -> 3 intervals. (0 to 1, 1 to 2, 2 to 3)
-  const progressPercent = (Math.min(activeStep - 1, 3) / 3) * 100;
-
-  const steps = [
-    { num: 1, label: 'ROUND 1' },
-    { num: 2, label: 'ROUND 2' },
-    { num: 3, label: 'ROUND 3' },
-    { num: 4, label: 'VERDICT' },
-  ];
+export default function StepIndicators({ completedAgents = [], activeAgent = null, isComplete = false }) {
+  // Map agent id to step number
+  const agentToStep = { ats: 1, recruiter: 2, engineer: 3, manager: 4, optimizer: 5 };
+  const completedCount = completedAgents.length;
+  const activeStep = isComplete ? 6 : (agentToStep[activeAgent] ?? Math.min(completedCount + 1, 5));
+  const progressPercent = (Math.min(activeStep - 1, 5) / 5) * 100;
 
   return (
-    <section className="max-w-4xl mx-auto mb-24 mt-4 px-8">
-      <div className="relative flex items-center justify-between w-full">
+    <section className="max-w-4xl mx-auto mb-24 mt-4 px-4 md:px-8 overflow-x-auto">
+      <div className="relative flex items-center justify-between w-full min-w-[400px]">
         {/* Track Background */}
-        <div className="absolute top-1/2 left-0 w-full h-1.5 -translate-y-1/2 bg-[#1a1e2e]/80 rounded-full z-0 overflow-hidden shadow-inner border border-white/5 backdrop-blur-sm"></div>
-        
+        <div className="absolute top-1/2 left-0 w-full h-[3px] -translate-y-1/2 bg-[#27272A] rounded-full z-0"></div>
+
         {/* Track Fill */}
-        <div 
-          className="absolute top-1/2 left-0 h-1.5 -translate-y-1/2 bg-gradient-to-r from-primary/30 via-primary/70 to-primary rounded-full z-0 transition-all duration-1000 ease-courtly shadow-[0_0_15px_rgba(230,195,100,0.6)]"
-          style={{ width: `${progressPercent}%` }}
-        ></div>
+        <div
+          className="absolute top-1/2 left-0 h-[3px] -translate-y-1/2 bg-[#5B8CFF] rounded-full z-0 transition-all duration-1000 ease-courtly"
+          style={{ width: `${progressPercent}%`, boxShadow: '0 0 8px rgba(91,140,255,0.4)' }}
+        />
 
         {/* Steps */}
-        {steps.map((step) => {
-          const isCompleted = step.num < activeStep || (isComplete && step.num === 4);
+        {STEPS.map((step) => {
+          const isCompleted = step.num < activeStep || (isComplete && step.num === 6);
           const isActive = step.num === activeStep;
 
-          let circleClasses = "w-12 h-12 rounded-full flex items-center justify-center font-bold text-base transition-all duration-700 ease-courtly z-10 relative ";
-          let labelClasses = "absolute -bottom-9 whitespace-nowrap font-label-caps text-[11px] transition-all duration-700 ease-courtly ";
+          let circleClasses = "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-700 ease-courtly z-10 relative ";
+          let labelClasses = "absolute -bottom-9 whitespace-nowrap font-label-caps text-[10px] transition-all duration-700 ease-courtly ";
 
           if (isCompleted) {
-            circleClasses += "bg-[#161d2f] border-2 border-primary text-primary shadow-[0_0_15px_rgba(230,195,100,0.3)]";
-            labelClasses += "text-primary/70";
+            circleClasses += "w-9 h-9 bg-[#18181B] border-2 border-[#5B8CFF]/60 text-[#5B8CFF] transition-all duration-500";
+            labelClasses += "text-[#71717A]";
           } else if (isActive) {
-            circleClasses += "bg-primary text-[#101415] shadow-[0_0_30px_rgba(230,195,100,0.8)] ring-4 ring-primary/25 scale-110";
-            labelClasses += "text-primary tracking-[0.2em] font-bold translate-y-1";
+            circleClasses += "w-9 h-9 bg-[#5B8CFF] text-white shadow-[0_0_20px_rgba(91,140,255,0.5)] ring-4 ring-[#5B8CFF]/20 scale-110";
+            labelClasses += "text-[#5B8CFF] font-semibold";
           } else {
-            circleClasses += "bg-[#101415] border-2 border-slate-700/50 text-slate-500 shadow-inner";
-            labelClasses += "text-slate-600 tracking-wider";
+            circleClasses += "w-9 h-9 bg-[#09090B] border-2 border-[#27272A] text-[#52525B]";
+            labelClasses += "text-[#52525B]";
           }
 
           return (
             <div key={step.num} className="flex flex-col items-center relative group">
-              {/* Active Pulse Glow */}
               {isActive && (
-                <div className="absolute inset-0 rounded-full bg-primary/20 blur-xl scale-[1.8] animate-pulse z-0 pointer-events-none"></div>
+                <div className="absolute inset-0 rounded-full bg-[#5B8CFF]/15 blur-xl scale-[2] animate-pulse z-0 pointer-events-none"></div>
               )}
-              
               <div className={circleClasses}>
                 {isCompleted ? (
-                  <span className="material-symbols-outlined text-[20px]">check</span>
-                ) : step.num === 4 ? (
-                  <span className="material-symbols-outlined text-[18px]">
-                    {isComplete ? 'gavel' : 'lock'}
+                  <span className="material-symbols-outlined text-[16px]">check</span>
+                ) : step.num === 6 ? (
+                  <span className="material-symbols-outlined text-[16px]" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>
+                    {isComplete ? 'analytics' : 'lock'}
                   </span>
                 ) : (
-                  step.num
+                  <span className="material-symbols-outlined text-[14px]">{step.icon}</span>
                 )}
               </div>
-              <span className={labelClasses}>
-                {step.label}
-              </span>
+              <span className={labelClasses}>{step.label}</span>
             </div>
           );
         })}

@@ -1,15 +1,14 @@
 import React from 'react';
 
-export default function ChambersSection() {
+export default function SettingsSection() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in-up px-4">
-      <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center mb-6">
-        <span className="material-symbols-outlined text-6xl text-primary/80" style={{ fontVariationSettings: "'FILL' 1" }}>lock</span>
+      <div className="w-20 h-20 rounded-2xl bg-[#171A20] border border-[#2D2F36] flex items-center justify-center mb-6">
+        <span className="material-symbols-outlined text-5xl text-[#3F3F46]" style={{ fontVariationSettings: "'FILL' 1" }}>settings</span>
       </div>
-      <h2 className="font-headline-md text-3xl text-primary tracking-widest uppercase mb-4">Judge's Chambers</h2>
-      <div className="h-[1px] w-32 bg-primary/30 mb-6"></div>
-      <p className="text-body-rt text-lg text-slate-300 max-w-xl">
-        Private chambers are reserved for premium cases. Coming soon.
+      <h2 className="font-headline-md text-xl text-[#FAFAFA] mb-2">Settings</h2>
+      <p className="text-[#71717A] text-sm max-w-sm leading-relaxed">
+        Advanced settings and account preferences coming soon. Sign in with Google to save your analyses across devices.
       </p>
     </div>
   );

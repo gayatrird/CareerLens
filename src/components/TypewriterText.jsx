@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { playTick } from '../utils/audio';
 
-export default function TypewriterText({ text, speed = 15, onComplete, className = "", cursorClass = "text-[#c9a84c]", delayStart = 0 }) {
+export default function TypewriterText({ text, speed = 15, onComplete, className = "", cursorClass = "text-[#5B8CFF]", delayStart = 0 }) {
   const [displayed, setDisplayed] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const textRef = useRef(text);

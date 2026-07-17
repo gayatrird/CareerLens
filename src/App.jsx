@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { personas } from './config/personas';
+import { agents } from './config/agents';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
-import DebateSection from './components/DebateSection';
-import RoundIndicators from './components/RoundIndicators';
-import ArgumentsSection from './components/ArgumentsSection';
-import VerdictSection from './components/VerdictSection';
-import ArchivesSection from './components/ArchivesSection';
-import EvidenceSection from './components/EvidenceSection';
-import ChambersSection from './components/ChambersSection';
-import { generateArgument, generateVerdict } from './services/claudeApi';
+import UploadSection from './components/DebateSection';
+import LandingPage from './components/LandingPage';
+import StepIndicators from './components/RoundIndicators';
+import LoadingSequence from './components/LoadingSequence';
+import AnalysisSection from './components/ArgumentsSection';
+import ResultSection from './components/VerdictSection';
+import HistorySection from './components/ArchivesSection';
+import InterviewSection from './components/EvidenceSection';
+import SettingsSection from './components/ChambersSection';
+import MatchScoreboard from './components/Scoreboard';
+import { analyzeWithAgent, generateHiringRecommendation } from './services/hiringApi';
 import { initAudio } from './utils/audio';
 import TypewriterText from './components/TypewriterText';
 import { auth, onAuthStateChanged, signInWithPopup, googleProvider } from './services/firebase';
@@ -20,39 +23,46 @@ const delay = ms => new Promise(res => setTimeout(res, ms));
 function BackgroundParticles() {
   return (
     <div className="fixed inset-0 pointer-events-none z-[0] overflow-hidden">
-      <div className="absolute top-[20%] left-[10%] w-2 h-2 rounded-full bg-[#c9a84c]/40 shadow-[0_0_10px_rgba(201,168,76,0.8)] animate-[float_10s_infinite_ease-in-out]"></div>
-      <div className="absolute top-[60%] left-[80%] w-1.5 h-1.5 rounded-full bg-[#c9a84c]/30 shadow-[0_0_8px_rgba(201,168,76,0.6)] animate-[float_15s_infinite_ease-in-out_2s]"></div>
-      <div className="absolute top-[80%] left-[30%] w-2.5 h-2.5 rounded-full bg-[#c9a84c]/20 shadow-[0_0_12px_rgba(201,168,76,0.5)] animate-[float_12s_infinite_ease-in-out_1s]"></div>
-      <div className="absolute top-[30%] left-[60%] w-1 h-1 rounded-full bg-[#c9a84c]/50 shadow-[0_0_6px_rgba(201,168,76,0.9)] animate-[float_14s_infinite_ease-in-out_4s]"></div>
-      <div className="absolute top-[10%] left-[90%] w-2 h-2 rounded-full bg-[#c9a84c]/30 shadow-[0_0_10px_rgba(201,168,76,0.7)] animate-[float_18s_infinite_ease-in-out_3s]"></div>
-      <div className="absolute top-[70%] left-[15%] w-1.5 h-1.5 rounded-full bg-[#c9a84c]/40 shadow-[0_0_8px_rgba(201,168,76,0.8)] animate-[float_11s_infinite_ease-in-out_5s]"></div>
+      <div className="absolute top-[20%] left-[10%] w-1.5 h-1.5 rounded-full bg-[#5B8CFF]/25 shadow-[0_0_12px_rgba(91,140,255,0.5)] animate-[float_10s_infinite_ease-in-out]"></div>
+      <div className="absolute top-[60%] left-[80%] w-1 h-1 rounded-full bg-[#5B8CFF]/20 shadow-[0_0_8px_rgba(91,140,255,0.4)] animate-[float_15s_infinite_ease-in-out_2s]"></div>
+      <div className="absolute top-[80%] left-[30%] w-2 h-2 rounded-full bg-[#5B8CFF]/15 shadow-[0_0_10px_rgba(91,140,255,0.3)] animate-[float_12s_infinite_ease-in-out_1s]"></div>
+      <div className="absolute top-[30%] left-[60%] w-1 h-1 rounded-full bg-[#5B8CFF]/30 shadow-[0_0_6px_rgba(91,140,255,0.5)] animate-[float_14s_infinite_ease-in-out_4s]"></div>
+      <div className="absolute top-[10%] left-[90%] w-1.5 h-1.5 rounded-full bg-[#5B8CFF]/20 shadow-[0_0_8px_rgba(91,140,255,0.4)] animate-[float_18s_infinite_ease-in-out_3s]"></div>
+      <div className="absolute top-[70%] left-[15%] w-1 h-1 rounded-full bg-[#5B8CFF]/25 shadow-[0_0_6px_rgba(91,140,255,0.5)] animate-[float_11s_infinite_ease-in-out_5s]"></div>
     </div>
   );
 }
 
+const AGENT_ORDER = ['ats', 'recruiter', 'engineer', 'manager', 'optimizer'];
+
+const TRANSITION_LABELS = {
+  ats: '🤖 ATS ANALYSIS — SCANNING KEYWORDS',
+  recruiter: '📋 RECRUITER REVIEW — EVALUATING PROJECTS',
+  engineer: '⚙️ TECHNICAL REVIEW — ANALYZING DEPTH',
+  manager: '🎯 HIRING MANAGER — MAKING DECISION',
+  optimizer: '✨ RESUME OPTIMIZER — IMPROVING CONTENT',
+};
+
 export default function App() {
-  const [debateState, setDebateState] = useState({
-    topic: "",
-    leftPersonaId: "elon",
-    rightPersonaId: "buffett",
-    rounds: [],
-    verdict: null,
-    status: "idle", // idle | running | complete | error
-    activeAgent: null, // 'advocate' | 'opposer' | 'judge'
-    leftScoreTotal: 0,
-    leftScoreCount: 0,
-    rightScoreTotal: 0,
-    rightScoreCount: 0
+  const [analysisState, setAnalysisState] = useState({
+    resumeText: '',
+    jobDescription: '',
+    companyMode: 'general',
+    agentResults: {},
+    recommendation: null,
+    status: 'idle', // idle | analyzing | complete | error
+    activeAgent: null,
+    completedAgents: [],
   });
-  
-  const [errorMsg, setErrorMsg] = useState("");
+
+  const [errorMsg, setErrorMsg] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
-  const [hasPreviousDebate, setHasPreviousDebate] = useState(false);
+  const [hasPreviousAnalysis, setHasPreviousAnalysis] = useState(false);
   const [transitionMessage, setTransitionMessage] = useState(null);
-  const [activeTab, setActiveTab] = useState("DOCKET");
+  const [activeTab, setActiveTab] = useState('DOCKET');
   const [user, setUser] = useState(null);
-  
-  const verdictRef = useRef(null);
+  const [currentRoute, setCurrentRoute] = useState('landing');
+  const resultRef = useRef(null);
 
   useEffect(() => {
     if (!auth) return;
@@ -63,27 +73,25 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem('courtroom_last_debate');
-    if (saved) {
-      setHasPreviousDebate(true);
-    }
+    const saved = localStorage.getItem('hireflow_last_analysis');
+    if (saved) setHasPreviousAnalysis(true);
   }, []);
 
-  const loadPreviousDebate = () => {
+  const loadPreviousAnalysis = () => {
     try {
-      const saved = localStorage.getItem('courtroom_last_debate');
+      const saved = localStorage.getItem('hireflow_last_analysis');
       if (saved) {
-        setDebateState(JSON.parse(saved));
-        setHasPreviousDebate(false);
+        setAnalysisState(JSON.parse(saved));
+        setHasPreviousAnalysis(false);
       }
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleStartDebate = async (topic, leftId, rightId) => {
+  const handleStartAnalysis = async (resumeText, jobDescription, companyMode) => {
     if (auth && !user) {
-      const confirmLogin = window.confirm("You must be logged in to start a debate. Log in now with Google?");
+      const confirmLogin = window.confirm("Sign in with Google to save your analyses. Log in now?");
       if (confirmLogin) {
         try {
           await signInWithPopup(auth, googleProvider);
@@ -92,162 +100,159 @@ export default function App() {
           setErrorMsg("Login failed: " + error.message);
           return;
         }
-      } else {
-        return;
       }
+      // Allow proceeding without login
     }
 
-    if (topic.length < 10) {
-      setErrorMsg("Please provide more detail about your decision (min 10 characters).");
+    if (!resumeText || resumeText.trim().length < 20) {
+      setErrorMsg("Please upload a resume or paste resume content (minimum 20 characters).");
       return;
     }
-    
-    setErrorMsg("");
-    setHasPreviousDebate(false);
-    initAudio();
-    
-    setDebateState({
-      topic,
-      leftPersonaId: leftId,
-      rightPersonaId: rightId,
-      rounds: [],
-      verdict: null,
-      status: "running",
-      activeAgent: null,
-      leftScoreTotal: 0,
-      leftScoreCount: 0,
-      rightScoreTotal: 0,
-      rightScoreCount: 0
-    });
+    if (!jobDescription || jobDescription.trim().length < 30) {
+      setErrorMsg("Please paste a job description (minimum 30 characters).");
+      return;
+    }
 
+    setErrorMsg('');
+    setHasPreviousAnalysis(false);
+    initAudio();
+
+    setAnalysisState({
+      resumeText,
+      jobDescription,
+      companyMode,
+      agentResults: {},
+      recommendation: null,
+      status: 'initializing',
+      activeAgent: null,
+      completedAgents: [],
+    });
+  };
+
+  const handleSequenceComplete = async () => {
+    setAnalysisState(prev => ({ ...prev, status: 'analyzing' }));
     try {
-      await runDebateEngine(topic, leftId, rightId);
+      await runAnalysisEngine(analysisState.resumeText, analysisState.jobDescription, analysisState.companyMode);
     } catch (error) {
       console.error(error);
-      setErrorMsg("The court is in recess. Please try again. (" + error.message + ")");
-      setDebateState(prev => ({ ...prev, status: "error" }));
+      setErrorMsg("Analysis error. Please try again. (" + error.message + ")");
+      setAnalysisState(prev => ({ ...prev, status: 'error' }));
     }
   };
 
-  const runDebateEngine = async (topic, leftId, rightId) => {
-    let currentRounds = [];
-    let lastOpposingArgument = "";
-    
-    const leftPersona = personas.find(p => p.id === leftId);
-    const rightPersona = personas.find(p => p.id === rightId);
+  const runAnalysisEngine = async (resumeText, jobDescription, companyMode) => {
+    let accumulatedResults = {};
+    let completedAgents = [];
 
-    // Run 3 Rounds
-    for (let round = 1; round <= 3; round++) {
-      if (round > 1) {
-        setTransitionMessage(round === 3 ? "⚔️ ROUND 3 — FINAL ARGUMENTS" : "⚔️ ROUND 2 BEGINS");
-        await delay(1500);
-        setTransitionMessage(null);
-      }
+    for (const agentId of AGENT_ORDER) {
+      await delay(400);
 
-      currentRounds.push({ round, advocate: "", opposer: "" });
-      
-      // Update state to show Advocate is thinking
-      setDebateState(prev => ({ ...prev, rounds: [...currentRounds], activeAgent: 'advocate' }));
-      
-      // Advocate Call
-      const advocateResponse = await generateArgument('advocate', leftPersona, rightPersona, topic, round, currentRounds, lastOpposingArgument);
-      currentRounds[round - 1].advocate = advocateResponse;
-      lastOpposingArgument = advocateResponse;
-      
-      // Update state to show Opposer is thinking
-      setDebateState(prev => ({ ...prev, rounds: [...currentRounds], activeAgent: 'opposer' }));
-      
-      // Dramatic Pause
-      await delay(300);
+      // Mark agent as active (thinking)
+      setAnalysisState(prev => ({
+        ...prev,
+        activeAgent: agentId,
+        completedAgents,
+      }));
 
-      // Opposer Call
-      const opposerResponse = await generateArgument('opposer', leftPersona, rightPersona, topic, round, currentRounds, lastOpposingArgument);
-      currentRounds[round - 1].opposer = opposerResponse;
-      lastOpposingArgument = opposerResponse;
+      // Call the agent API
+      const result = await analyzeWithAgent(agentId, resumeText, jobDescription, companyMode);
+      accumulatedResults = { ...accumulatedResults, [agentId]: result };
+      completedAgents = [...completedAgents, agentId];
 
-      // Update state after round completes
-      setDebateState(prev => ({ ...prev, rounds: [...currentRounds] }));
-      
-      if (round < 3) {
-        await delay(500);
-      }
+      // Update state with result
+      setAnalysisState(prev => ({
+        ...prev,
+        agentResults: accumulatedResults,
+        activeAgent: null,
+        completedAgents,
+      }));
+
+      await delay(400);
     }
 
-    // Judge Call
-    await delay(800);
-    setDebateState(prev => ({ ...prev, activeAgent: 'judge' }));
-    const verdict = await generateVerdict(`${leftPersona.name} vs ${rightPersona.name}`, topic, currentRounds);
-    
-    // Finalize
+    // Generate final recommendation
+    setTransitionMessage('⚖️ GENERATING HIRING RECOMMENDATION...');
+    await delay(1000);
+    setTransitionMessage(null);
+
+    setAnalysisState(prev => ({ ...prev, activeAgent: 'recommendation' }));
+
+    const recommendation = await generateHiringRecommendation(
+      resumeText,
+      jobDescription,
+      accumulatedResults,
+      companyMode
+    );
+
     const finalState = {
       id: Math.random().toString(36).substring(2, 8).toUpperCase(),
       date: new Date().toISOString(),
-      topic,
-      mode: `${leftPersona.name} vs ${rightPersona.name}`,
-      leftPersonaId: leftId,
-      rightPersonaId: rightId,
-      rounds: currentRounds,
-      verdict,
-      status: "complete",
-      activeAgent: null
+      topic: jobDescription.substring(0, 100),
+      resumeText,
+      jobDescription,
+      companyMode,
+      agentResults: accumulatedResults,
+      recommendation,
+      status: 'complete',
+      activeAgent: null,
+      completedAgents: AGENT_ORDER,
     };
-    
-    setDebateState(finalState);
-    localStorage.setItem('courtroom_last_debate', JSON.stringify(finalState));
-    
+
+    setAnalysisState(finalState);
+
+    // Persist to localStorage
+    localStorage.setItem('hireflow_last_analysis', JSON.stringify(finalState));
     try {
       const existingArchives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
       existingArchives.push(finalState);
       localStorage.setItem('courtroom_archives', JSON.stringify(existingArchives));
     } catch (e) {
-      console.error("Failed to save to archives", e);
+      console.error("Failed to save to history", e);
     }
-    
+
     setTimeout(() => {
-      if (verdictRef.current) {
-        verdictRef.current.scrollIntoView({ behavior: 'smooth' });
+      if (resultRef.current) {
+        resultRef.current.scrollIntoView({ behavior: 'smooth' });
       }
     }, 500);
   };
 
-  const handleArgumentScored = (agent, scores) => {
-    const avg = Math.round((scores.logic + scores.evidence + scores.impact) / 3);
-    setDebateState(prev => {
-      if (agent === 'advocate') {
-        const newTotal = (prev.leftScoreTotal || 0) + avg;
-        const newCount = (prev.leftScoreCount || 0) + 1;
-        return { ...prev, leftScoreTotal: newTotal, leftScoreCount: newCount };
-      } else {
-        const newTotal = (prev.rightScoreTotal || 0) + avg;
-        const newCount = (prev.rightScoreCount || 0) + 1;
-        return { ...prev, rightScoreTotal: newTotal, rightScoreCount: newCount };
-      }
-    });
-  };
-
-  const handleShareDebate = () => {
-    const leftPersona = personas.find(p => p.id === debateState.leftPersonaId);
-    const rightPersona = personas.find(p => p.id === debateState.rightPersonaId);
-    let text = `DualMind Debate: "${debateState.topic}"\nMatchup: ${leftPersona?.name} vs ${rightPersona?.name}\n\n`;
-    
-    debateState.rounds.forEach(r => {
-      text += `--- ROUND ${r.round} ---\n`;
-      text += `Advocate: ${r.advocate}\n\n`;
-      text += `Opposer: ${r.opposer}\n\n`;
-    });
-    
-    if (debateState.verdict) {
-      text += `--- FINAL VERDICT ---\n`;
-      text += `${debateState.verdict.verdict}\n\n`;
-      text += `Clarity Score: ${debateState.verdict.clarityScore}/100\n`;
-    }
-    
+  const handleShareAnalysis = () => {
+    const text = `HireFlow AI Analysis\nMatch Score: ${analysisState.recommendation?.overallMatch ?? 0}%\nRecommendation: ${analysisState.recommendation?.recommendation ?? ''}\n\n${analysisState.recommendation?.hiringInsight ?? ''}`;
     navigator.clipboard.writeText(text);
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 2000);
   };
 
-  const isDebating = debateState.status === 'running';
+  const handleNewAnalysis = () => {
+    setAnalysisState({
+      resumeText: '',
+      jobDescription: '',
+      companyMode: 'general',
+      agentResults: {},
+      recommendation: null,
+      status: 'idle',
+      activeAgent: null,
+      completedAgents: [],
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const isAnalyzing = analysisState.status === 'analyzing';
+  const agentScores = {
+    ats: analysisState.agentResults?.ats?.score,
+    recruiter: analysisState.agentResults?.recruiter?.score,
+    engineer: analysisState.agentResults?.engineer?.score,
+    manager: analysisState.agentResults?.manager?.score,
+  };
+  const overallScore = (() => {
+    const scores = Object.values(agentScores).filter(s => s != null);
+    return scores.length > 0 ? Math.round(scores.reduce((a, s) => a + s, 0) / scores.length) : 0;
+  })();
+
+  if (currentRoute === 'landing') {
+    return <LandingPage onGetStarted={() => setCurrentRoute('app')} />;
+  }
 
   return (
     <div className="text-on-background selection:bg-primary/30 selection:text-primary min-h-screen relative">
@@ -256,93 +261,122 @@ export default function App() {
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {toastVisible && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-surface border border-primary/50 text-primary px-6 py-3 rounded-full shadow-lg z-50 animate-fade-in-up">
-          Copied to clipboard! ⚖️
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-[#171A20] border border-[#5B8CFF]/40 text-[#5B8CFF] px-6 py-3 rounded-xl shadow-lg z-50 animate-fade-in-up text-sm font-label-caps tracking-wider">
+          Copied to clipboard! 📋
         </div>
       )}
 
-      <main className="lg:ml-72 pt-28 pb-32 px-4 md:px-10 max-w-7xl mx-auto">
-        {hasPreviousDebate && debateState.status === 'idle' && (
-          <div className="w-full max-w-[800px] mx-auto mb-6 bg-[#161d2f] border border-primary/30 px-6 py-3 rounded-xl shadow-lg animate-fade-in-up flex items-center justify-between gap-4">
+      <main className="lg:ml-64 pt-24 pb-32 px-4 md:px-10 max-w-7xl mx-auto">
+        {/* Previous analysis banner */}
+        {hasPreviousAnalysis && analysisState.status === 'idle' && (
+          <div className="w-full max-w-[900px] mx-auto mb-6 bg-[#171A20] border border-[#2D2F36] px-6 py-3 rounded-xl shadow-lg animate-fade-in-up flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#c9a84c] text-lg">folder_open</span>
-              <span className="text-sm text-gray-300">You have a previous debate on record.</span>
+              <span className="material-symbols-outlined text-[#5B8CFF] text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>history</span>
+              <span className="text-sm text-[#A1A1AA]">You have a previous analysis on record.</span>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={loadPreviousDebate} className="text-[#c9a84c] text-sm font-label-caps hover:brightness-110 underline">View it?</button>
-              <button onClick={() => setHasPreviousDebate(false)} className="text-gray-500 hover:text-gray-300 material-symbols-outlined text-sm">close</button>
+              <button onClick={loadPreviousAnalysis} className="text-[#5B8CFF] text-sm font-label-caps hover:brightness-110 underline">View it?</button>
+              <button onClick={() => setHasPreviousAnalysis(false)} className="text-[#71717A] hover:text-[#A1A1AA] material-symbols-outlined text-sm">close</button>
             </div>
           </div>
         )}
-        
+
+        {/* Error message */}
         {errorMsg && (
           <div className="w-full md:w-3/4 mx-auto mb-6 bg-red-900/20 border border-primary text-primary px-6 py-4 rounded-xl flex items-center justify-between">
             <p>{errorMsg}</p>
+            <button onClick={() => setErrorMsg('')} className="material-symbols-outlined text-primary/50 hover:text-primary ml-4">close</button>
           </div>
         )}
 
+        {/* Transition overlay */}
         {transitionMessage && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in-up">
-            <h2 className="text-4xl md:text-6xl font-headline-md text-[#c9a84c] tracking-widest uppercase text-center md:scale-100 scale-75">
-              <TypewriterText text={transitionMessage} speed={30} />
-            </h2>
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-md animate-fade-in-up">
+            <div className="text-center px-8">
+              <h2 className="text-2xl md:text-4xl font-headline-md text-[#5B8CFF] tracking-[0.1em] uppercase text-center">
+                <TypewriterText text={transitionMessage} speed={25} />
+              </h2>
+              <div className="mt-4 h-px w-48 mx-auto bg-gradient-to-r from-transparent via-[#5B8CFF]/40 to-transparent"></div>
+            </div>
           </div>
         )}
 
+        {/* DOCKET: Main analysis tab */}
         {activeTab === 'DOCKET' && (
           <>
-            <DebateSection
-              onStartDebate={handleStartDebate}
-              isDebating={isDebating}
-            />
-
-            {debateState.status !== 'idle' && (
-              <RoundIndicators rounds={debateState.rounds} isComplete={debateState.status === 'complete'} />
+            {/* Loading Sequence */}
+            {analysisState.status === 'initializing' && (
+              <LoadingSequence onComplete={handleSequenceComplete} />
             )}
 
-            {debateState.status !== 'idle' && (
-              <ArgumentsSection 
-                rounds={debateState.rounds} 
-                activeAgent={debateState.activeAgent} 
-                leftPersona={personas.find(p => p.id === debateState.leftPersonaId)}
-                rightPersona={personas.find(p => p.id === debateState.rightPersonaId)}
-                leftScoreTotal={debateState.leftScoreTotal}
-                leftScoreCount={debateState.leftScoreCount}
-                rightScoreTotal={debateState.rightScoreTotal}
-                rightScoreCount={debateState.rightScoreCount}
-                onArgumentScored={handleArgumentScored}
+            {/* Upload section — show only when idle */}
+            {analysisState.status === 'idle' && (
+              <UploadSection
+                onStartAnalysis={handleStartAnalysis}
+                isAnalyzing={false}
               />
             )}
 
-            {debateState.activeAgent === 'judge' && (
+            {/* Step progress indicator */}
+            {analysisState.status === 'analyzing' && (
+              <StepIndicators
+                completedAgents={analysisState.completedAgents || []}
+                activeAgent={analysisState.activeAgent}
+                isComplete={analysisState.status === 'complete'}
+              />
+            )}
+
+            {/* Scoreboard during analysis */}
+            {analysisState.status === 'analyzing' && (
+              <MatchScoreboard
+                atsScore={agentScores.ats}
+                recruiterScore={agentScores.recruiter}
+                engineerScore={agentScores.engineer}
+                managerScore={agentScores.manager}
+              />
+            )}
+
+            {/* Agent analysis cards */}
+            {analysisState.status === 'analyzing' && analysisState.activeAgent !== 'recommendation' && (
+              <AnalysisSection
+                agents={agents}
+                agentResults={analysisState.agentResults}
+                activeAgent={analysisState.activeAgent}
+                overallScore={overallScore}
+              />
+            )}
+
+            {/* Final "deliberating" overlay */}
+            {analysisState.activeAgent === 'recommendation' && (
               <div className="text-center py-12">
                 <p className="text-primary font-headline-md tracking-widest uppercase text-2xl md:text-3xl">
-                   <TypewriterText text="⚖️ THE COURT DELIBERATES..." speed={30} className="animate-pulse" />
+                  <TypewriterText text="⚖️ GENERATING RECOMMENDATION..." speed={30} className="animate-pulse" />
                 </p>
               </div>
             )}
 
-            {debateState.status === 'complete' && debateState.verdict && (
-              <div ref={verdictRef}>
-                <VerdictSection 
-                  verdict={debateState.verdict} 
-                  onNew={() => setDebateState({ topic: "", leftPersonaId: "elon", rightPersonaId: "buffett", rounds: [], verdict: null, status: "idle", activeAgent: null })} 
-                  topic={debateState.topic}
-                  rounds={debateState.rounds}
-                  leftPersona={personas.find(p => p.id === debateState.leftPersonaId)}
-                  rightPersona={personas.find(p => p.id === debateState.rightPersonaId)}
+            {/* Result section */}
+            {analysisState.status === 'complete' && analysisState.recommendation && (
+              <div ref={resultRef}>
+                <ResultSection
+                  recommendation={analysisState.recommendation}
+                  agentResults={analysisState.agentResults}
+                  resumeText={analysisState.resumeText}
+                  jobDescription={analysisState.jobDescription}
+                  companyMode={analysisState.companyMode}
+                  onNew={handleNewAnalysis}
                 />
               </div>
             )}
           </>
         )}
 
-        {activeTab === 'ARCHIVES' && <ArchivesSection />}
-        {activeTab === 'EVIDENCE' && <EvidenceSection />}
-        {activeTab === 'CHAMBERS' && <ChambersSection />}
+        {activeTab === 'ARCHIVES' && <HistorySection />}
+        {activeTab === 'EVIDENCE' && <InterviewSection />}
+        {activeTab === 'CHAMBERS' && <SettingsSection />}
       </main>
 
-      <MobileNav />
+      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   );
 }
