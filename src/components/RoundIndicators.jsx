@@ -17,7 +17,7 @@ export default function StepIndicators({ completedAgents = [], activeAgent = nul
   const progressPercent = (Math.min(activeStep - 1, 5) / 5) * 100;
 
   return (
-    <section className="max-w-4xl mx-auto mb-24 mt-4 px-4 md:px-8 overflow-x-auto">
+    <section className="max-w-4xl mx-auto mb-20 mt-4 pb-10 px-4 md:px-8 w-full overflow-hidden sm:overflow-visible">
       <div className="relative flex items-center justify-between w-full min-w-[400px]">
         {/* Track Background */}
         <div className="absolute top-1/2 left-0 w-full h-[3px] -translate-y-1/2 bg-[#27272A] rounded-full z-0"></div>

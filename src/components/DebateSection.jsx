@@ -1,5 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { companies } from '../config/agents';
+import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 const MAX_JD_CHARS = 3000;
 
@@ -20,7 +24,24 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
-  const handleFileRead = (file) => {
+  const extractTextFromPDF = async (arrayBuffer) => {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    return fullText;
+  };
+
+  const extractTextFromDocx = async (arrayBuffer) => {
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return result.value;
+  };
+
+  const handleFileRead = async (file) => {
     if (!file) return;
     if (!file.name.match(/\.(txt|pdf|docx|doc)$/i)) {
       setLocalError('Please upload a .txt, .pdf, or .docx file.');
@@ -28,13 +49,30 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
     }
     setFileName(file.name);
     setLocalError('');
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const cleaned = typeof text === 'string' ? text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{3,}/g, '\n').trim() : '';
+    
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      let text = '';
+      
+      if (file.name.toLowerCase().endsWith('.pdf')) {
+        text = await extractTextFromPDF(arrayBuffer);
+      } else if (file.name.toLowerCase().match(/\.docx?$/)) {
+        text = await extractTextFromDocx(arrayBuffer);
+      } else {
+        // TXT
+        text = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.readAsText(file);
+        });
+      }
+      
+      const cleaned = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{3,}/g, '\n').trim();
       setResumeText(cleaned || text);
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      console.error("Error reading file:", err);
+      setLocalError('Failed to read file. Please try pasting the text instead.');
+    }
   };
 
   const handleDrop = (e) => {

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { playTick } from '../utils/audio';
 
 export default function TypewriterText({ text, speed = 15, onComplete, className = "", cursorClass = "text-[#5B8CFF]", delayStart = 0 }) {
   const [displayed, setDisplayed] = useState('');
@@ -18,7 +17,6 @@ export default function TypewriterText({ text, speed = 15, onComplete, className
       const typeChar = () => {
         if (i < text.length) {
           setDisplayed(text.substring(0, i + 1));
-          playTick();
           i++;
           timeout = setTimeout(typeChar, speed);
         } else {

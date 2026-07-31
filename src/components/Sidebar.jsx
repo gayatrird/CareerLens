@@ -41,6 +41,12 @@ export default function Sidebar({ activeTab, setActiveTab }) {
           <span className="material-symbols-outlined text-[18px]">quiz</span>
           <span className="text-xs font-semibold tracking-wider">Interview Kit</span>
         </button>
+
+        <button className={getTabClass('SUBSCRIPTION')} onClick={() => setActiveTab && setActiveTab('SUBSCRIPTION')}>
+          <span className="material-symbols-outlined text-[18px]">credit_card</span>
+          <span className="text-xs font-semibold tracking-wider">Pricing</span>
+        </button>
+
         <button className={getTabClass('CHAMBERS')} onClick={() => setActiveTab && setActiveTab('CHAMBERS')}>
           <span className="material-symbols-outlined text-[18px]">settings</span>
           <span className="text-xs font-semibold tracking-wider">Settings</span>

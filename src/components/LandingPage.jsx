@@ -22,9 +22,9 @@ export default function LandingPage({ onGetStarted }) {
         </div>
 
         <div className="hidden md:flex items-center gap-8 text-sm font-medium text-[#A1A1AA]">
-          <a href="#" className="hover:text-[#FAFAFA] transition-colors">Features</a>
-          <a href="#" className="hover:text-[#FAFAFA] transition-colors">How it works</a>
-          <a href="#" className="hover:text-[#FAFAFA] transition-colors">FAQ</a>
+          <a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">Features</a>
+          <a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">How it works</a>
+          <a href="#faq" className="hover:text-[#FAFAFA] transition-colors">FAQ</a>
         </div>
 
         <div className="flex items-center gap-4">
@@ -177,6 +177,173 @@ export default function LandingPage({ onGetStarted }) {
           </div>
         </div>
       </main>
+
+      {/* Features Section */}
+      <section id="features" className="relative z-10 py-24 bg-[#111318] border-y border-[#27272A]/50">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-4 text-[#FAFAFA]">
+              Why Use <span className="text-[#4F7DF3]">HireFlow?</span>
+            </h2>
+            <p className="text-[#A1A1AA] text-lg max-w-2xl mx-auto">
+              A complete toolkit to optimize your resume and ace the interview process.
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {/* Feature 1 */}
+            <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-8 hover:border-[#4F7DF3]/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(79,125,243,0.15)] group">
+              <div className="w-12 h-12 rounded-xl bg-[#4F7DF3]/10 border border-[#4F7DF3]/20 flex items-center justify-center mb-6 group-hover:bg-[#4F7DF3]/20 transition-colors">
+                <span className="material-symbols-outlined text-[#4F7DF3] text-[24px]">gavel</span>
+              </div>
+              <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">AI Hiring Panel</h3>
+              <p className="text-[#A1A1AA] leading-relaxed text-sm">
+                Get your resume reviewed by a simulated panel: an ATS bot, a Tech Recruiter, a Senior Engineer, and a Hiring Manager. Understand exactly how different roles view your application.
+              </p>
+            </div>
+
+            {/* Feature 2 */}
+            <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-8 hover:border-[#F59E0B]/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] group">
+              <div className="w-12 h-12 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/20 flex items-center justify-center mb-6 group-hover:bg-[#F59E0B]/20 transition-colors">
+                <span className="material-symbols-outlined text-[#F59E0B] text-[24px]">manage_search</span>
+              </div>
+              <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Deep ATS Scan</h3>
+              <p className="text-[#A1A1AA] leading-relaxed text-sm">
+                Identify exact missing keywords, analyze skills gaps, and get your bullet points automatically rewritten using the STAR method to maximize your matching score.
+              </p>
+            </div>
+
+            {/* Feature 3 */}
+            <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-8 hover:border-[#22C55E]/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(34,197,94,0.15)] group">
+              <div className="w-12 h-12 rounded-xl bg-[#22C55E]/10 border border-[#22C55E]/20 flex items-center justify-center mb-6 group-hover:bg-[#22C55E]/20 transition-colors">
+                <span className="material-symbols-outlined text-[#22C55E] text-[24px]">quiz</span>
+              </div>
+              <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Interview Kit</h3>
+              <p className="text-[#A1A1AA] leading-relaxed text-sm">
+                Don't just pass the resume screen. HireFlow automatically generates behavioral and technical interview questions perfectly tailored to the gaps in your resume and the target JD.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* How it Works Section */}
+      <section id="how-it-works" className="relative z-10 py-24 bg-[#09090B]">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center mb-20">
+            <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-4 text-[#FAFAFA]">
+              How it <span className="text-[#4F7DF3]">Works</span>
+            </h2>
+            <p className="text-[#A1A1AA] text-lg max-w-2xl mx-auto">
+              Three simple steps to optimize your job hunt.
+            </p>
+          </div>
+
+          <div className="relative max-w-4xl mx-auto pt-4">
+            {/* Connecting Line */}
+            <div className="hidden md:block absolute top-[3rem] left-0 w-full h-0.5 bg-gradient-to-r from-[#27272A] via-[#4F7DF3]/50 to-[#27272A] z-0"></div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-8 relative z-10">
+              {/* Step 1 */}
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-[#171A20] border-2 border-[#4F7DF3] flex items-center justify-center text-xl font-bold text-[#FAFAFA] mb-6 shadow-[0_0_20px_rgba(79,125,243,0.3)]">
+                  1
+                </div>
+                <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Upload Assets</h3>
+                <p className="text-[#A1A1AA] text-sm leading-relaxed">
+                  Drop your current resume (PDF, DOCX) and paste the exact Job Description you are targeting.
+                </p>
+              </div>
+
+              {/* Step 2 */}
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-[#171A20] border-2 border-[#4F7DF3] flex items-center justify-center text-xl font-bold text-[#FAFAFA] mb-6 shadow-[0_0_20px_rgba(79,125,243,0.3)]">
+                  2
+                </div>
+                <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">AI Analysis</h3>
+                <p className="text-[#A1A1AA] text-sm leading-relaxed">
+                  Our autonomous agents review your profile from multiple perspectives simultaneously to find weaknesses.
+                </p>
+              </div>
+
+              {/* Step 3 */}
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-[#171A20] border-2 border-[#4F7DF3] flex items-center justify-center text-xl font-bold text-[#FAFAFA] mb-6 shadow-[0_0_20px_rgba(79,125,243,0.3)]">
+                  3
+                </div>
+                <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Optimize & Prep</h3>
+                <p className="text-[#A1A1AA] text-sm leading-relaxed">
+                  Apply the recommended bullet rewrites and use the generated interview questions to ace the real thing.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section */}
+      <section className="relative z-10 py-20 border-t border-[#27272A]/50 bg-[#111318]">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-6 text-[#FAFAFA]">
+            Ready to stop guessing?
+          </h2>
+          <p className="text-[#A1A1AA] text-lg mb-10 max-w-xl mx-auto">
+            Join other engineers and professionals who are using AI to land their dream jobs.
+          </p>
+          <button 
+            onClick={onGetStarted}
+            className="bg-[#4F7DF3] text-white px-10 py-4 rounded-xl text-[16px] font-semibold hover:bg-[#436FE3] transition-all inline-flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(79,125,243,0.4)] hover:scale-105"
+          >
+            Start Analyzing for Free
+            <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
+          </button>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer id="footer" className="relative z-10 border-t border-[#27272A] bg-[#09090B] py-12">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+          <div className="md:col-span-2">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-7 h-7 bg-[#FAFAFA] rounded flex items-center justify-center">
+                <span className="text-[#09090B] font-black text-xs tracking-tighter">HF</span>
+              </div>
+              <span className="font-bold text-lg tracking-tight text-[#FAFAFA]">HireFlow</span>
+            </div>
+            <p className="text-[#A1A1AA] text-sm max-w-xs leading-relaxed">
+              The ultimate AI-powered application workflow. Built for the modern job seeker.
+            </p>
+          </div>
+          
+          <div>
+            <h4 className="text-[#FAFAFA] font-semibold mb-4 text-sm">Product</h4>
+            <ul className="space-y-2 text-sm text-[#A1A1AA]">
+              <li><a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">Features</a></li>
+              <li><a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">How it works</a></li>
+              <li><a href="#" className="hover:text-[#FAFAFA] transition-colors">Pricing</a></li>
+            </ul>
+          </div>
+          
+          <div>
+            <h4 className="text-[#FAFAFA] font-semibold mb-4 text-sm">Legal</h4>
+            <ul className="space-y-2 text-sm text-[#A1A1AA]">
+              <li><a href="#" className="hover:text-[#FAFAFA] transition-colors">Privacy Policy</a></li>
+              <li><a href="#" className="hover:text-[#FAFAFA] transition-colors">Terms of Service</a></li>
+            </ul>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-6 border-t border-[#27272A] pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-[#52525B] text-xs">© {new Date().getFullYear()} HireFlow AI. All rights reserved.</p>
+          <div className="flex gap-4">
+            <a href="#" className="text-[#52525B] hover:text-[#FAFAFA] transition-colors">
+              <span className="material-symbols-outlined text-[20px]">link</span>
+            </a>
+            <a href="#" className="text-[#52525B] hover:text-[#FAFAFA] transition-colors">
+              <span className="material-symbols-outlined text-[20px]">share</span>
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

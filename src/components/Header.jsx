@@ -67,6 +67,17 @@ export default function Header({ activeTab, setActiveTab }) {
             <button className={navClass('DOCKET')} onClick={() => setActiveTab('DOCKET')}>ANALYZE</button>
             <button className={navClass('ARCHIVES')} onClick={() => setActiveTab('ARCHIVES')}>HISTORY</button>
             <button className={navClass('EVIDENCE')} onClick={() => setActiveTab('EVIDENCE')}>INTERVIEW</button>
+            <button
+              className={`font-inter uppercase tracking-[0.15em] font-semibold text-xs transition-all duration-200 pb-1 border-b-2 flex items-center gap-1.5 ${
+                activeTab === 'DEEPSCAN'
+                  ? 'text-[#F59E0B] border-[#F59E0B]'
+                  : 'text-[#71717A] hover:text-[#A1A1AA] border-transparent'
+              }`}
+              onClick={() => setActiveTab('DEEPSCAN')}
+            >
+              DEEP SCAN
+              <span className="text-[8px] px-1.5 py-0.5 rounded bg-[#F59E0B]/15 text-[#F59E0B] border border-[#F59E0B]/25 tracking-widest">NEW</span>
+            </button>
           </nav>
         )}
 

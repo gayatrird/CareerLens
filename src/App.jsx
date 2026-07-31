@@ -13,7 +13,8 @@ import HistorySection from './components/ArchivesSection';
 import InterviewSection from './components/EvidenceSection';
 import SettingsSection from './components/ChambersSection';
 import MatchScoreboard from './components/Scoreboard';
-import { analyzeWithAgent, generateHiringRecommendation } from './services/hiringApi';
+import SubscriptionSection from './components/SubscriptionSection';
+import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan } from './services/hiringApi';
 import { initAudio } from './utils/audio';
 import TypewriterText from './components/TypewriterText';
 import { auth, onAuthStateChanged, signInWithPopup, googleProvider } from './services/firebase';
@@ -50,6 +51,7 @@ export default function App() {
     companyMode: 'general',
     agentResults: {},
     recommendation: null,
+    deepScanResult: null,
     status: 'idle', // idle | analyzing | complete | error
     activeAgent: null,
     completedAgents: [],
@@ -123,6 +125,7 @@ export default function App() {
       companyMode,
       agentResults: {},
       recommendation: null,
+      deepScanResult: null,
       status: 'initializing',
       activeAgent: null,
       completedAgents: [],
@@ -135,8 +138,13 @@ export default function App() {
       await runAnalysisEngine(analysisState.resumeText, analysisState.jobDescription, analysisState.companyMode);
     } catch (error) {
       console.error(error);
-      setErrorMsg("Analysis error. Please try again. (" + error.message + ")");
-      setAnalysisState(prev => ({ ...prev, status: 'error' }));
+      if (error.message.includes('RATE_LIMIT_EXCEEDED') || error.message.includes('429')) {
+        setAnalysisState(prev => ({ ...prev, status: 'idle' }));
+        setActiveTab('SUBSCRIPTION');
+      } else {
+        setErrorMsg("Analysis error. Please try again. (" + error.message + ")");
+        setAnalysisState(prev => ({ ...prev, status: 'error' }));
+      }
     }
   };
 
@@ -145,7 +153,7 @@ export default function App() {
     let completedAgents = [];
 
     for (const agentId of AGENT_ORDER) {
-      await delay(400);
+      await delay(50);
 
       // Mark agent as active (thinking)
       setAnalysisState(prev => ({
@@ -167,22 +175,23 @@ export default function App() {
         completedAgents,
       }));
 
-      await delay(400);
+      await delay(50);
     }
-
-    // Generate final recommendation
-    setTransitionMessage('⚖️ GENERATING HIRING RECOMMENDATION...');
-    await delay(1000);
-    setTransitionMessage(null);
 
     setAnalysisState(prev => ({ ...prev, activeAgent: 'recommendation' }));
 
-    const recommendation = await generateHiringRecommendation(
-      resumeText,
-      jobDescription,
-      accumulatedResults,
-      companyMode
-    );
+    const [recommendation, deepScanResult] = await Promise.all([
+      generateHiringRecommendation(
+        resumeText,
+        jobDescription,
+        accumulatedResults,
+        companyMode
+      ),
+      runDeepAtsScan(resumeText, jobDescription).catch(err => {
+        console.error("Deep scan failed, but proceeding", err);
+        return null;
+      })
+    ]);
 
     const finalState = {
       id: Math.random().toString(36).substring(2, 8).toUpperCase(),
@@ -193,6 +202,7 @@ export default function App() {
       companyMode,
       agentResults: accumulatedResults,
       recommendation,
+      deepScanResult,
       status: 'complete',
       activeAgent: null,
       completedAgents: AGENT_ORDER,
@@ -210,11 +220,7 @@ export default function App() {
       console.error("Failed to save to history", e);
     }
 
-    setTimeout(() => {
-      if (resultRef.current) {
-        resultRef.current.scrollIntoView({ behavior: 'smooth' });
-      }
-    }, 500);
+    // Removed automatic scroll so user can see agent results above.
   };
 
   const handleShareAnalysis = () => {
@@ -318,7 +324,7 @@ export default function App() {
             )}
 
             {/* Step progress indicator */}
-            {analysisState.status === 'analyzing' && (
+            {(analysisState.status === 'analyzing' || analysisState.status === 'complete') && (
               <StepIndicators
                 completedAgents={analysisState.completedAgents || []}
                 activeAgent={analysisState.activeAgent}
@@ -327,7 +333,7 @@ export default function App() {
             )}
 
             {/* Scoreboard during analysis */}
-            {analysisState.status === 'analyzing' && (
+            {(analysisState.status === 'analyzing' || analysisState.status === 'complete') && (
               <MatchScoreboard
                 atsScore={agentScores.ats}
                 recruiterScore={agentScores.recruiter}
@@ -337,7 +343,7 @@ export default function App() {
             )}
 
             {/* Agent analysis cards */}
-            {analysisState.status === 'analyzing' && analysisState.activeAgent !== 'recommendation' && (
+            {(analysisState.status === 'analyzing' || analysisState.status === 'complete') && (
               <AnalysisSection
                 agents={agents}
                 agentResults={analysisState.agentResults}
@@ -346,14 +352,7 @@ export default function App() {
               />
             )}
 
-            {/* Final "deliberating" overlay */}
-            {analysisState.activeAgent === 'recommendation' && (
-              <div className="text-center py-12">
-                <p className="text-primary font-headline-md tracking-widest uppercase text-2xl md:text-3xl">
-                  <TypewriterText text="⚖️ GENERATING RECOMMENDATION..." speed={30} className="animate-pulse" />
-                </p>
-              </div>
-            )}
+            {/* Final "deliberating" overlay removed based on user feedback */}
 
             {/* Result section */}
             {analysisState.status === 'complete' && analysisState.recommendation && (
@@ -361,9 +360,11 @@ export default function App() {
                 <ResultSection
                   recommendation={analysisState.recommendation}
                   agentResults={analysisState.agentResults}
+                  deepScanResult={analysisState.deepScanResult}
                   resumeText={analysisState.resumeText}
                   jobDescription={analysisState.jobDescription}
                   companyMode={analysisState.companyMode}
+                  analysisId={analysisState.id}
                   onNew={handleNewAnalysis}
                 />
               </div>
@@ -373,6 +374,9 @@ export default function App() {
 
         {activeTab === 'ARCHIVES' && <HistorySection />}
         {activeTab === 'EVIDENCE' && <InterviewSection />}
+
+        {activeTab === 'SUBSCRIPTION' && <SubscriptionSection />}
+
         {activeTab === 'CHAMBERS' && <SettingsSection />}
       </main>
 

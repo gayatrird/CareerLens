@@ -1,7 +1,8 @@
 import { companyContexts } from '../config/agents';
 
 const API_URL = '/api/groq/openai/v1/chat/completions';
-const MODEL = 'llama-3.3-70b-versatile';
+const MODEL   = 'llama-3.3-70b-versatile';
+
 
 const cleanText = (text) => {
   if (!text) return '';
@@ -69,37 +70,33 @@ Respond ONLY in this exact JSON format with no extra text:
   "summary": "2-3 sentences on overall shortlist decision reasoning"
 }`,
 
-    optimizer: `You are an expert resume writer and career coach. Rewrite the resume bullet points for maximum impact using the STAR method and strong action verbs. STRICT RULES: Never fabricate experience. Never invent skills. Only improve language, structure, and measurability of existing content.${companyNote}
+    optimizer: `You are an expert resume writer. Rewrite bullets using the STAR method to maximize clarity and impact.\${companyNote}
 
-Respond ONLY in this exact JSON format with no extra text:
-{
-  "improvedBullets": [
-    {"original": "original bullet text", "improved": "rewritten bullet with metrics and impact"},
-    {"original": "original bullet text", "improved": "rewritten bullet with metrics and impact"},
-    {"original": "original bullet text", "improved": "rewritten bullet with metrics and impact"}
-  ],
-  "writingTips": ["tip 1", "tip 2", "tip 3"],
-  "overallImpactScore": <0-100>,
-  "summary": "2 sentences on the main areas of improvement"
-}`
+CRITICAL RULE — READ CAREFULLY:
+You may ONLY rephrase, reorder, or clarify wording that already exists in the original bullet. You must NEVER add a number, percentage, metric, timeframe, or outcome that is not already explicitly stated in the original bullet.
+- If the original bullet has NO quantified result, your rewrite must also have NO quantified result. Improve it using stronger verbs, clearer scope, and better structure instead — do not invent one to "sound more impressive."
+- If the original bullet already has a number (e.g. "50+ users"), you may keep or rephrase that exact number, but do not add additional invented metrics alongside it (e.g. do not add uptime %, latency, or performance gains that were never mentioned).
+- Before writing each "improved" bullet, check: is every number in my rewrite present in the original? If not, remove it.
+
+Respond ONLY in this exact JSON:
+{"improvedBullets":[{"original":"text","improved":"rewritten"}],"writingTips":["t1","t2","t3"],"overallImpactScore":<0-100>,"summary":"2 sentences"}`
   };
 
   return prompts[agentId] || prompts.ats;
 };
 
 const getFinalRecommendationPrompt = () => {
-  return `You are the Chief Talent Officer synthesizing all hiring expert reviews into a final hiring recommendation. Analyze all agent scores and findings and deliver a definitive recommendation.
+  return `You are the Chief Talent Officer synthesizing all hiring expert reviews into one final recommendation.
 
-Respond ONLY in this exact JSON format with no extra text:
-{
-  "overallMatch": <0-100>,
-  "recommendation": "SHORTLIST" or "MAYBE" or "NOT_ALIGNED",
-  "actionableTakeaway": "One powerful sentence under 12 words",
-  "keyStrengths": ["strength 1 full sentence", "strength 2 full sentence", "strength 3 full sentence"],
-  "keyWeaknesses": ["weakness 1 full sentence", "weakness 2 full sentence", "weakness 3 full sentence"],
-  "hiringInsight": "2-3 sentences of final synthesis",
-  "nextStep": "One concrete next step the candidate should take"
-}`;
+CRITICAL CONSISTENCY RULE:
+Your "recommendation" label MUST match the actual sentiment of the reviews and your own "hiringInsight" text. Do not output a more positive label than the evidence supports.
+- Use "SHORTLIST" only if the overall signal is genuinely strong — high scores across most agents AND the Hiring Manager's decision is HIRE (not MAYBE or REJECT).
+- Use "MAYBE" if the Hiring Manager's decision is MAYBE, or if your own hiringInsight text hedges with phrases like "requires further evaluation," "needs additional experience," or "may not fully align."
+- Use "NOT_ALIGNED" if the Hiring Manager's decision is REJECT or the core requirements are largely missing.
+- Before finalizing, check: does my recommendation label match the tone of the hiringInsight I'm about to write? If hiringInsight says "further evaluation needed," the label cannot be SHORTLIST.
+
+Respond ONLY in this exact JSON:
+{"overallMatch":<0-100>,"recommendation":"SHORTLIST"|"MAYBE"|"NOT_ALIGNED","actionableTakeaway":"One powerful sentence under 12 words","keyStrengths":["s1","s2","s3"],"keyWeaknesses":["w1","w2","w3"],"hiringInsight":"2-3 sentences","nextStep":"One concrete next step"}`;
 };
 
 const getInterviewQuestionsPrompt = () => {
@@ -130,46 +127,31 @@ Respond ONLY in this exact JSON format with no extra text:
 
 const callGroq = async (systemPrompt, userContent, options = {}, retries = 10) => {
   const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  if (!apiKey) throw new Error("Groq API key is missing");
+  if (!apiKey) throw new Error('Groq API key is missing. Add VITE_GROQ_API_KEY to your .env file.');
 
   const response = await fetch(API_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
     body: JSON.stringify({
       model: MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent }
+        { role: 'user',   content: userContent  }
       ],
-      temperature: options.temperature ?? 0.3,
-      max_tokens: options.maxTokens ?? 1200,
-      response_format: { type: "json_object" }
+      temperature:     options.temperature ?? 0.3,
+      max_tokens:      options.maxTokens   ?? 1200,
+      response_format: { type: 'json_object' }
     })
   });
 
   if (!response.ok) {
     let errorDetail = response.statusText;
-    let is429 = response.status === 429;
-    try {
-      const err = await response.json();
-      errorDetail = err.error?.message || errorDetail;
-    } catch (e) { /* ignore */ }
-
-    if (is429 && retries > 0) {
-      let waitMs = 5500;
-      const waitMatch = errorDetail.match(/try again in (\d+(\.\d+)?)s/);
-      if (waitMatch && waitMatch[1]) {
-        waitMs = (parseFloat(waitMatch[1]) * 1000) + 200; // parse wait time + 200ms buffer
-      }
-      console.warn(`Groq 429 Rate Limit hit. Retrying in ${Math.round(waitMs/100)/10} seconds... (${retries} retries left)`);
-      await new Promise(r => setTimeout(r, waitMs));
-      return callGroq(systemPrompt, userContent, options, retries - 1);
+    const is429 = response.status === 429;
+    try { const err = await response.json(); errorDetail = err.error?.message || errorDetail; } catch (_) {}
+    if (is429) {
+      throw new Error(`RATE_LIMIT_EXCEEDED: Groq rate limit hit. ${errorDetail}`);
     }
-
-    throw new Error(`Groq API Error: ${response.status} - ${errorDetail}`);
+    throw new Error(`Groq API Error ${response.status}: ${errorDetail}`);
   }
 
   const data = await response.json();
@@ -197,7 +179,7 @@ Analyze this resume against the job description and return your findings in the 
 
   const rawResponse = await callGroq(systemPrompt, userContent, {
     temperature: agentId === 'optimizer' ? 0.5 : 0.25,
-    maxTokens: agentId === 'optimizer' ? 600 : 350
+    maxTokens: 600
   });
 
   try {
@@ -316,12 +298,87 @@ Respond ONLY in this exact JSON:
 No other text.`;
 
   try {
-    const rawResponse = await callGroq(systemPrompt, `Score this resume section: "${text.substring(0, 300)}"`, {
+  const rawResponse = await callGemini(systemPrompt, `Score this resume section: "${text.substring(0, 300)}"`, {
       temperature: 0.1,
       maxTokens: 60
     });
     return JSON.parse(rawResponse);
   } catch (e) {
     return { ats: 50, technical: 50, communication: 50 };
+  }
+};
+
+// ─── DEEP ATS SCAN ───────────────────────────────────────────────────────────
+
+const DEEP_ATS_SYSTEM_PROMPT = `You are an expert ATS (Applicant Tracking System) analyst and senior technical recruiter with 15+ years of experience screening resumes against job descriptions across tech, product, and business roles.
+
+You will be given:
+[RESUME]: the candidate's full resume text
+[JOB_DESCRIPTION]: the target job posting text
+
+Analyze the resume strictly against the job description and return ONLY a valid JSON object with this exact structure — no markdown, no preamble, no commentary outside the JSON:
+
+{
+  "match_score": {
+    "score": <integer 0-100>,
+    "reason": "<one sentence explaining the score>"
+  },
+  "skills_comparison": [
+    {
+      "skill": "<skill or requirement from JD>",
+      "status": "yes" | "partial" | "no",
+      "evidence": "<short quote or reference from resume, or 'Not mentioned' if absent>"
+    }
+  ],
+  "missing_keywords": [
+    {
+      "keyword": "<keyword or phrase>",
+      "importance_rank": <integer 1-5>,
+      "why_it_matters": "<one short phrase, e.g. 'appears 4x in JD, core requirement'>"
+    }
+  ],
+  "bullet_rewrites": [
+    {
+      "original": "<verbatim weakest bullet from resume>",
+      "rewritten": "<rephrased version targeting this JD>",
+      "what_changed": "<one short phrase on what was emphasized or reframed>"
+    }
+  ],
+  "cover_letter": "<~120 word tailored cover letter draft>"
+}
+
+RULES YOU MUST FOLLOW:
+1. Match score must be justified by actual keyword/skill overlap and experience relevance — do not inflate it to be encouraging.
+2. skills_comparison must cover every explicit requirement/skill mentioned in the JD, not a cherry-picked subset.
+3. missing_keywords: rank by how frequently/prominently the term appears in the JD and how core it is to the role (e.g. a required tool ranks higher than a "nice to have").
+4. bullet_rewrites: select exactly the 3 weakest or least JD-relevant bullets from the resume. You may ONLY rephrase, reframe, reorder, or use different wording to surface existing experience. You must NEVER invent metrics, technologies, responsibilities, or outcomes that are not already present or reasonably implied in the original bullet. If a bullet has no quantifiable result in the original, do not add a fabricated number.
+5. cover_letter: must be grounded only in experience actually present in the resume. No invented projects, companies, or claims. Keep it to approximately 120 words, professional tone, specific to this JD (reference the role/company context if present in the JD).
+6. If the job description is vague or missing key details, note this in match_score.reason rather than guessing.
+7. Output valid JSON only. No trailing commentary.`;
+
+/**
+ * Run a single deep ATS scan combining match scoring, skills comparison,
+ * keyword gap analysis, bullet rewrites, and cover letter generation.
+ */
+export const runDeepAtsScan = async (resumeText, jobDescription) => {
+  const safeResume = resumeText?.substring(0, 3000) || '';
+  const safeJD = jobDescription?.substring(0, 3000) || '';
+
+  const userContent = `[RESUME]:
+${safeResume}
+
+[JOB_DESCRIPTION]:
+${safeJD}`;
+
+  const rawResponse = await callGroq(DEEP_ATS_SYSTEM_PROMPT, userContent, {
+    temperature: 0.2,
+    maxTokens: 2400,
+  });
+
+  try {
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    console.error('Failed to parse Deep ATS Scan response:', e, rawResponse);
+    throw new Error('Failed to parse Deep ATS Scan results. Please try again.');
   }
 };
