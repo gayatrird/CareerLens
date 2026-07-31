@@ -2,19 +2,17 @@ import React from 'react';
 
 const STEPS = [
   { num: 1, label: 'ATS', icon: 'manage_search' },
-  { num: 2, label: 'RECRUITER', icon: 'person_search' },
-  { num: 3, label: 'ENGINEER', icon: 'code' },
-  { num: 4, label: 'MANAGER', icon: 'supervisor_account' },
-  { num: 5, label: 'OPTIMIZER', icon: 'auto_fix_high' },
-  { num: 6, label: 'RESULT', icon: 'analytics' },
+  { num: 2, label: 'MANAGER', icon: 'supervisor_account' },
+  { num: 3, label: 'OPTIMIZER', icon: 'auto_fix_high' },
+  { num: 4, label: 'RESULT', icon: 'analytics' },
 ];
 
 export default function StepIndicators({ completedAgents = [], activeAgent = null, isComplete = false }) {
   // Map agent id to step number
-  const agentToStep = { ats: 1, recruiter: 2, engineer: 3, manager: 4, optimizer: 5 };
+  const agentToStep = { ats: 1, manager: 2, optimizer: 3 };
   const completedCount = completedAgents.length;
-  const activeStep = isComplete ? 6 : (agentToStep[activeAgent] ?? Math.min(completedCount + 1, 5));
-  const progressPercent = (Math.min(activeStep - 1, 5) / 5) * 100;
+  const activeStep = isComplete ? 4 : (agentToStep[activeAgent] ?? Math.min(completedCount + 1, 3));
+  const progressPercent = (Math.min(activeStep - 1, 3) / 3) * 100;
 
   return (
     <section className="max-w-4xl mx-auto mb-20 mt-4 pb-10 px-4 md:px-8 w-full overflow-hidden sm:overflow-visible">
@@ -30,7 +28,7 @@ export default function StepIndicators({ completedAgents = [], activeAgent = nul
 
         {/* Steps */}
         {STEPS.map((step) => {
-          const isCompleted = step.num < activeStep || (isComplete && step.num === 6);
+          const isCompleted = step.num < activeStep || (isComplete && step.num === 4);
           const isActive = step.num === activeStep;
 
           let circleClasses = "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all duration-700 ease-courtly z-10 relative ";
@@ -55,7 +53,7 @@ export default function StepIndicators({ completedAgents = [], activeAgent = nul
               <div className={circleClasses}>
                 {isCompleted ? (
                   <span className="material-symbols-outlined text-[16px]">check</span>
-                ) : step.num === 6 ? (
+                ) : step.num === 4 ? (
                   <span className="material-symbols-outlined text-[16px]" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>
                     {isComplete ? 'analytics' : 'lock'}
                   </span>

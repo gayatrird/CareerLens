@@ -120,12 +120,6 @@ function AgentResultCard({ agent, result, isThinking, cardRef }) {
             }
           </div>
 
-          {/* Score bars after typing */}
-          {typed && agent.id !== 'optimizer' && score != null && (
-            <div className="space-y-2 border-t border-white/5 pt-4 animate-fade-in-up">
-              <AgentScoreBar label={agent.scoreLabel} score={score} color={agent.color} />
-            </div>
-          )}
 
           {/* Decision badge for manager */}
           {typed && result?.decision && (
@@ -253,6 +247,22 @@ export default function AnalysisSection({ agents, agentResults, activeAgent, ove
             />
           );
         })}
+        
+        {activeAgent === 'recommendation' && (
+          <div className="glass-panel p-6 rounded-2xl flex items-center gap-4 relative overflow-hidden animate-fade-in-up" style={{ borderLeft: `4px solid #F59E0B` }}>
+            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `linear-gradient(to right, #F59E0B, transparent)` }}></div>
+            <div className="w-10 h-10 rounded-full flex items-center justify-center border" style={{ borderColor: `#F59E0B60`, backgroundColor: `#F59E0B15` }}>
+              <span className="material-symbols-outlined text-lg text-amber-500">gavel</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="font-label-caps text-xs text-amber-500">CHIEF TALENT OFFICER</span>
+              <div className="flex items-center gap-2">
+                <ThinkingDots colorClass="bg-white/50" />
+                <span className="text-xs text-slate-400 animate-pulse">Synthesizing final recommendation & deep scan...</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

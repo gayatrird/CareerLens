@@ -65,13 +65,14 @@ function getRecommendationData(recommendation, overallMatch) {
   };
 }
 
-export default function ResultSection({ recommendation, onNew, agentResults, deepScanResult, resumeText, jobDescription, companyMode, analysisId }) {
+export default function ResultSection({ recommendation, onNew, agentResults, deepScanResult, resumeText, jobDescription, companyMode, analysisId, onRunDeepScan }) {
   const [animatedOffset, setAnimatedOffset] = useState(CIRCUMFERENCE);
   const [displayScore, setDisplayScore] = useState(0);
   const [typed, setTyped] = useState(false);
   const [isPreparing, setIsPreparing] = useState(false);
   const [interviewData, setInterviewData] = useState(null);
   const [interviewStatus, setInterviewStatus] = useState('idle');
+  const [isScanning, setIsScanning] = useState(false);
   
   const [activeResultTab, setActiveResultTab] = useState('skills');
   const [copiedCL, setCopiedCL] = useState(false);
@@ -140,10 +141,15 @@ export default function ResultSection({ recommendation, onNew, agentResults, dee
     }
   };
 
+  const handleRunDeepScanClick = async () => {
+    if (!onRunDeepScan) return;
+    setIsScanning(true);
+    await onRunDeepScan();
+    setIsScanning(false);
+  };
+
   const agentScores = [
     { label: 'ATS Score',     value: agentResults?.ats?.score,                  color: '#3b82f6' },
-    { label: 'Recruiter',     value: agentResults?.recruiter?.score,             color: '#8b5cf6' },
-    { label: 'Technical',     value: agentResults?.engineer?.score,              color: '#22C55E' },
     { label: 'Manager',       value: agentResults?.manager?.score,               color: '#F59E0B' },
     { label: 'Resume Impact', value: agentResults?.optimizer?.overallImpactScore, color: '#5B8CFF' },
   ];
@@ -329,6 +335,30 @@ export default function ResultSection({ recommendation, onNew, agentResults, dee
             </ul>
           </div>
         </div>
+
+        {/* Deep ATS Scan Trigger */}
+        {!deepScanResult && (
+          <div className="border-t border-[#27272A] p-8 md:p-10 animate-fade-in-up bg-[#09090B]/60 flex flex-col items-center justify-center text-center">
+            <div className="w-12 h-12 rounded-full bg-[#F59E0B]/10 border border-[#F59E0B]/20 flex items-center justify-center mb-4">
+              <span className="material-symbols-outlined text-[#F59E0B] text-[20px]">manage_search</span>
+            </div>
+            <h3 className="text-[#FAFAFA] font-semibold text-lg mb-2">Deep ATS Scan</h3>
+            <p className="text-[#A1A1AA] text-sm max-w-md mx-auto mb-6 leading-relaxed">
+              Unlock a comprehensive breakdown including exact keyword matches, bullet-by-bullet rewrites, and a tailored cover letter draft.
+            </p>
+            <button
+              onClick={handleRunDeepScanClick}
+              disabled={isScanning}
+              className="bg-transparent border border-[#F59E0B]/50 hover:bg-[#F59E0B]/10 text-[#F59E0B] font-semibold text-sm tracking-wide px-8 py-2.5 rounded-full hover:scale-[1.02] active:scale-95 transition-all duration-200 flex items-center gap-2"
+            >
+              {isScanning ? (
+                <><span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span> Scanning Resume...</>
+              ) : (
+                <><span className="material-symbols-outlined text-[16px]">search</span> Run Deep Scan (High Token Cost)</>
+              )}
+            </button>
+          </div>
+        )}
 
         {/* Deep ATS Scan Results */}
         {deepScanResult && (

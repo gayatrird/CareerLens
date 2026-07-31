@@ -34,12 +34,10 @@ function BackgroundParticles() {
   );
 }
 
-const AGENT_ORDER = ['ats', 'recruiter', 'engineer', 'manager', 'optimizer'];
+const AGENT_ORDER = ['ats', 'manager', 'optimizer'];
 
 const TRANSITION_LABELS = {
   ats: '🤖 ATS ANALYSIS — SCANNING KEYWORDS',
-  recruiter: '📋 RECRUITER REVIEW — EVALUATING PROJECTS',
-  engineer: '⚙️ TECHNICAL REVIEW — ANALYZING DEPTH',
   manager: '🎯 HIRING MANAGER — MAKING DECISION',
   optimizer: '✨ RESUME OPTIMIZER — IMPROVING CONTENT',
 };
@@ -138,11 +136,18 @@ export default function App() {
       await runAnalysisEngine(analysisState.resumeText, analysisState.jobDescription, analysisState.companyMode);
     } catch (error) {
       console.error(error);
-      if (error.message.includes('RATE_LIMIT_EXCEEDED') || error.message.includes('429')) {
+      const errorMsgText = error.message || '';
+      const isRateLimit = errorMsgText.includes('RATE_LIMIT_EXCEEDED') || errorMsgText.includes('429');
+      const isDailyLimit = isRateLimit && (errorMsgText.includes('TPD') || errorMsgText.includes('RPD') || errorMsgText.includes('per day') || errorMsgText.includes('daily'));
+
+      if (isDailyLimit) {
         setAnalysisState(prev => ({ ...prev, status: 'idle' }));
         setActiveTab('SUBSCRIPTION');
+      } else if (isRateLimit) {
+        setErrorMsg("Service is busy (Rate limit). Please wait a few seconds and try again.");
+        setAnalysisState(prev => ({ ...prev, status: 'error' }));
       } else {
-        setErrorMsg("Analysis error. Please try again. (" + error.message + ")");
+        setErrorMsg("Analysis error. Please try again. (" + errorMsgText + ")");
         setAnalysisState(prev => ({ ...prev, status: 'error' }));
       }
     }
@@ -167,7 +172,7 @@ export default function App() {
       accumulatedResults = { ...accumulatedResults, [agentId]: result };
       completedAgents = [...completedAgents, agentId];
 
-      // Update state with result
+      // Update state with result. We keep activeAgent null briefly to let the UI settle.
       setAnalysisState(prev => ({
         ...prev,
         agentResults: accumulatedResults,
@@ -175,23 +180,22 @@ export default function App() {
         completedAgents,
       }));
 
-      await delay(50);
+      // Wait 1.2 seconds between agents to allow the typewriter effect to progress 
+      // and prevent visual flickering or feeling like it's happening all at once.
+      await delay(1200);
     }
 
     setAnalysisState(prev => ({ ...prev, activeAgent: 'recommendation' }));
 
-    const [recommendation, deepScanResult] = await Promise.all([
-      generateHiringRecommendation(
-        resumeText,
-        jobDescription,
-        accumulatedResults,
-        companyMode
-      ),
-      runDeepAtsScan(resumeText, jobDescription).catch(err => {
-        console.error("Deep scan failed, but proceeding", err);
-        return null;
-      })
-    ]);
+    const recommendation = await generateHiringRecommendation(
+      resumeText,
+      jobDescription,
+      accumulatedResults,
+      companyMode
+    );
+    
+    // Deep ATS scan is now optional and triggered manually to save tokens.
+    const deepScanResult = null;
 
     const finalState = {
       id: Math.random().toString(36).substring(2, 8).toUpperCase(),
@@ -221,6 +225,35 @@ export default function App() {
     }
 
     // Removed automatic scroll so user can see agent results above.
+  };
+
+  const handleRunDeepScan = async () => {
+    try {
+      const result = await runDeepAtsScan(analysisState.resumeText, analysisState.jobDescription);
+      const newState = { ...analysisState, deepScanResult: result };
+      setAnalysisState(newState);
+      
+      // Update persistent storage
+      localStorage.setItem('hireflow_last_analysis', JSON.stringify(newState));
+      try {
+        const archives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
+        const updatedArchives = archives.map(a => 
+          a.id === newState.id ? newState : a
+        );
+        localStorage.setItem('courtroom_archives', JSON.stringify(updatedArchives));
+      } catch (err) {
+        console.error("Failed to update archives with deep scan", err);
+      }
+      return true;
+    } catch (err) {
+      console.error(err);
+      if (err.message.includes('RATE_LIMIT_EXCEEDED') || err.message.includes('429')) {
+        setErrorMsg("Rate limit reached. Please wait a moment before running a deep scan.");
+      } else {
+        setErrorMsg("Deep scan failed. Please try again. (" + err.message + ")");
+      }
+      return false;
+    }
   };
 
   const handleShareAnalysis = () => {
@@ -366,6 +399,7 @@ export default function App() {
                   companyMode={analysisState.companyMode}
                   analysisId={analysisState.id}
                   onNew={handleNewAnalysis}
+                  onRunDeepScan={handleRunDeepScan}
                 />
               </div>
             )}

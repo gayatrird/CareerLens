@@ -125,37 +125,62 @@ Respond ONLY in this exact JSON format with no extra text:
 
 // ─── CORE API CALL ──────────────────────────────────────────────────────────
 
-const callGroq = async (systemPrompt, userContent, options = {}, retries = 10) => {
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
+const callGroq = async (systemPrompt, userContent, options = {}, retries = 8) => {
   const apiKey = import.meta.env.VITE_GROQ_API_KEY;
   if (!apiKey) throw new Error('Groq API key is missing. Add VITE_GROQ_API_KEY to your .env file.');
 
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user',   content: userContent  }
-      ],
-      temperature:     options.temperature ?? 0.3,
-      max_tokens:      options.maxTokens   ?? 1200,
-      response_format: { type: 'json_object' }
-    })
-  });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userContent  }
+        ],
+        temperature:     options.temperature ?? 0.3,
+        max_tokens:      options.maxTokens   ?? 1200,
+        response_format: { type: 'json_object' }
+      })
+    });
 
-  if (!response.ok) {
-    let errorDetail = response.statusText;
-    const is429 = response.status === 429;
-    try { const err = await response.json(); errorDetail = err.error?.message || errorDetail; } catch (_) {}
-    if (is429) {
-      throw new Error(`RATE_LIMIT_EXCEEDED: Groq rate limit hit. ${errorDetail}`);
+    if (!response.ok) {
+      let errorDetail = response.statusText;
+      const is429 = response.status === 429;
+      try { const err = await response.json(); errorDetail = err.error?.message || errorDetail; } catch (_) {}
+      
+      if (is429) {
+        // If it's a daily limit or billing limit, do not retry
+        const isDailyLimit = errorDetail.includes('TPD') || errorDetail.includes('RPD') || errorDetail.includes('per day') || errorDetail.includes('daily');
+        if (isDailyLimit || attempt === retries) {
+          throw new Error(`RATE_LIMIT_EXCEEDED: Groq rate limit hit. ${errorDetail}`);
+        }
+        // It's a temporary minute limit, so wait and retry
+        let waitTime = 2000 * attempt; 
+        const match = errorDetail.match(/Please try again in ([\d.]+)s/);
+        if (match && match[1]) {
+          waitTime = (parseFloat(match[1]) * 1000) + 1000; // Parse seconds from Groq response + 1s buffer
+        }
+        // Add random jitter between 500ms and 2500ms to avoid collisions
+        waitTime += 500 + Math.random() * 2000;
+        await delay(waitTime);
+        continue;
+      }
+      
+      if (response.status >= 500 && attempt < retries) {
+        await delay(2000 * attempt);
+        continue;
+      }
+      
+      throw new Error(`Groq API Error ${response.status}: ${errorDetail}`);
     }
-    throw new Error(`Groq API Error ${response.status}: ${errorDetail}`);
-  }
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+    const data = await response.json();
+    return data.choices[0].message.content;
+  }
 };
 
 // ─── EXPORTED FUNCTIONS ─────────────────────────────────────────────────────
@@ -210,16 +235,6 @@ ${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}ATS ANALYSIS:
 Score: ${agentResults.ats?.score ?? 'N/A'}
 Missing Keywords: ${(agentResults.ats?.missingKeywords || []).join(', ')}
 Summary: ${agentResults.ats?.summary ?? ''}
-
-RECRUITER REVIEW:
-Score: ${agentResults.recruiter?.score ?? 'N/A'}
-Strong Projects: ${(agentResults.recruiter?.strongProjects || []).join(', ')}
-Summary: ${agentResults.recruiter?.summary ?? ''}
-
-TECHNICAL DEPTH:
-Score: ${agentResults.engineer?.score ?? 'N/A'}
-Weak Areas: ${(agentResults.engineer?.weakTechnicalAreas || []).join(', ')}
-Summary: ${agentResults.engineer?.summary ?? ''}
 
 HIRING MANAGER DECISION:
 Decision: ${agentResults.manager?.decision ?? 'N/A'}

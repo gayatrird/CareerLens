@@ -11,30 +11,7 @@ export const agents = [
     reviewLabel: "ATS Analysis",
     scoreLabel: "ATS Score"
   },
-  {
-    id: "recruiter",
-    name: "Technical Recruiter",
-    emoji: "📋",
-    icon: "person_search",
-    role: "Candidate Screening",
-    style: "You are a senior technical recruiter with 10+ years at top tech firms. You evaluate candidates on project relevance, tech stack alignment, experience level, and overall candidacy strength for the specific role.",
-    color: "#8b5cf6",
-    thinkingLabel: "Reviewing Projects...",
-    reviewLabel: "Recruiter Review",
-    scoreLabel: "Recruiter Score"
-  },
-  {
-    id: "engineer",
-    name: "Senior Engineer",
-    emoji: "⚙️",
-    icon: "code",
-    role: "Technical Depth Review",
-    style: "You are a Staff Software Engineer conducting a technical resume review. You evaluate architecture decisions, system design thinking, project complexity, depth of technical contributions, and flag weak technical areas.",
-    color: "#10b981",
-    thinkingLabel: "Evaluating Architecture...",
-    reviewLabel: "Technical Depth",
-    scoreLabel: "Technical Score"
-  },
+
   {
     id: "manager",
     name: "Hiring Manager",
