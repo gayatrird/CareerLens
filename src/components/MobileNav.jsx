@@ -2,6 +2,7 @@ import React from 'react';
 
 export default function MobileNav({ activeTab, setActiveTab }) {
   const navItems = [
+    { tab: 'DASHBOARD', icon: 'grid_view',     label: 'Dashboard',  fill: true,  activeColor: '#5B8CFF' },
     { tab: 'DOCKET',   icon: 'work',          label: 'Analyze',    fill: true,  activeColor: '#5B8CFF' },
     { tab: 'ARCHIVES', icon: 'history',        label: 'History',    fill: false, activeColor: '#5B8CFF' },
     { tab: 'EVIDENCE', icon: 'quiz',           label: 'Interview',  fill: false, activeColor: '#5B8CFF' },

@@ -1,24 +1,55 @@
 import React, { useEffect, useState } from 'react';
+import { generateInterviewQuestions } from '../services/hiringApi';
 
 export default function InterviewSection() {
-  const [interviewHistory, setInterviewHistory] = useState([]);
+  const [archives, setArchives] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
+  const [loadingId, setLoadingId] = useState(null);
 
   useEffect(() => {
     try {
       const saved = localStorage.getItem('courtroom_archives');
       if (saved) {
         const parsed = JSON.parse(saved).reverse();
-        // Filter only those that actually have interviewData generated
-        const withInterviews = parsed.filter(a => a.interviewData);
-        setInterviewHistory(withInterviews);
+        setArchives(parsed);
       }
     } catch (e) {
       console.error("Error loading interview history", e);
     }
   }, []);
 
-  if (interviewHistory.length === 0) {
+  const handleGenerate = async (e, item) => {
+    e.stopPropagation();
+    setLoadingId(item.id);
+    try {
+      const result = await generateInterviewQuestions(item.resumeText, item.jobDescription, item.companyMode);
+      
+      const updatedArchives = archives.map(a => 
+        a.id === item.id ? { ...a, interviewData: result } : a
+      );
+      setArchives(updatedArchives);
+      setExpandedId(item.id);
+
+      // Persist update to localStorage
+      const rawArchives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
+      const updatedRaw = rawArchives.map(a => 
+        a.id === item.id ? { ...a, interviewData: result } : a
+      );
+      localStorage.setItem('courtroom_archives', JSON.stringify(updatedRaw));
+
+      const last = JSON.parse(localStorage.getItem('hireflow_last_analysis'));
+      if (last && last.id === item.id) {
+        last.interviewData = result;
+        localStorage.setItem('hireflow_last_analysis', JSON.stringify(last));
+      }
+    } catch (err) {
+      console.error("Failed to generate interview questions", err);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  if (archives.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in-up px-4">
         <div className="w-20 h-20 rounded-2xl bg-[#171A20] border border-[#2D2F36] flex items-center justify-center mb-6">
@@ -26,7 +57,7 @@ export default function InterviewSection() {
         </div>
         <h2 className="font-headline-md text-xl text-[#FAFAFA] mb-2">Interview Prep</h2>
         <p className="text-[#71717A] text-sm max-w-sm leading-relaxed mb-8">
-          Run a resume analysis first. After your analysis, click <strong className="text-[#5B8CFF] font-semibold">Prepare for Interview</strong> to get personalized questions based on your resume and the specific job description.
+          Run a resume analysis first in the <strong className="text-[#5B8CFF] font-semibold">Analyze</strong> tab to generate tailored interview questions based on your resume and target job description.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl w-full">
           {[
@@ -57,8 +88,10 @@ export default function InterviewSection() {
       </div>
 
       <div className="space-y-4">
-        {interviewHistory.map((item) => {
+        {archives.map((item) => {
           const isExpanded = expandedId === item.id;
+          const isLoading = loadingId === item.id;
+          const hasData = Boolean(item.interviewData);
           const dateStr = item.date
             ? new Date(item.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
             : 'Unknown Date';
@@ -70,7 +103,9 @@ export default function InterviewSection() {
             <div key={item.id} className="bg-[#171A20] border border-[#2D2F36] rounded-xl overflow-hidden transition-all duration-200">
               <div 
                 className="p-5 cursor-pointer hover:bg-[#1C1F26] flex flex-col md:flex-row md:items-center justify-between gap-4"
-                onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                onClick={() => {
+                  if (hasData) setExpandedId(isExpanded ? null : item.id);
+                }}
               >
                 <div>
                   <div className="flex items-center gap-3 mb-2">
@@ -88,15 +123,31 @@ export default function InterviewSection() {
                   </h3>
                 </div>
                 <div className="flex items-center justify-between md:justify-end gap-4 shrink-0">
-                  <div className="text-right hidden sm:block">
-                    <p className="text-[10px] font-label-caps text-slate-500 uppercase">Questions Generated</p>
-                    <p className="text-sm font-semibold text-gray-300">
-                      {(item.interviewData?.behavioral?.length || 0) + (item.interviewData?.technical?.length || 0) + (item.interviewData?.projectSpecific?.length || 0)}
-                    </p>
-                  </div>
-                  <span className="material-symbols-outlined text-slate-500 transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                    expand_more
-                  </span>
+                  {hasData ? (
+                    <div className="flex items-center gap-3">
+                      <div className="text-right hidden sm:block">
+                        <p className="text-[10px] font-label-caps text-emerald-400 uppercase">Prep Ready</p>
+                        <p className="text-xs text-slate-400">
+                          {(item.interviewData?.behavioral?.length || 0) + (item.interviewData?.technical?.length || 0) + (item.interviewData?.projectSpecific?.length || 0)} Questions
+                        </p>
+                      </div>
+                      <span className="material-symbols-outlined text-slate-500 transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                        expand_more
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => handleGenerate(e, item)}
+                      disabled={isLoading}
+                      className="bg-[#5B8CFF]/10 hover:bg-[#5B8CFF]/20 border border-[#5B8CFF]/30 text-[#5B8CFF] text-xs font-label-caps px-4 py-2 rounded-lg transition-all flex items-center gap-2"
+                    >
+                      {isLoading ? (
+                        <><span className="material-symbols-outlined animate-spin text-sm">progress_activity</span> Generating...</>
+                      ) : (
+                        <><span className="material-symbols-outlined text-sm">auto_awesome</span> Generate Questions</>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
 

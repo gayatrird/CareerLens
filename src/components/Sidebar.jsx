@@ -29,6 +29,10 @@ export default function Sidebar({ activeTab, setActiveTab }) {
 
       {/* Navigation */}
       <nav className="flex-1 py-2 flex flex-col">
+        <button className={getTabClass('DASHBOARD')} onClick={() => setActiveTab && setActiveTab('DASHBOARD')}>
+          <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: activeTab === 'DASHBOARD' ? "'FILL' 1" : "'FILL' 0" }}>grid_view</span>
+          <span className="text-xs font-semibold tracking-wider">Dashboard</span>
+        </button>
         <button className={getTabClass('DOCKET')} onClick={() => setActiveTab && setActiveTab('DOCKET')}>
           <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: activeTab === 'DOCKET' ? "'FILL' 1" : "'FILL' 0" }}>work</span>
           <span className="text-xs font-semibold tracking-wider">Analyze</span>

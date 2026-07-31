@@ -12,6 +12,7 @@ import ResultSection from './components/VerdictSection';
 import HistorySection from './components/ArchivesSection';
 import InterviewSection from './components/EvidenceSection';
 import SettingsSection from './components/ChambersSection';
+import DashboardSection from './components/DashboardSection';
 import MatchScoreboard from './components/Scoreboard';
 import SubscriptionSection from './components/SubscriptionSection';
 import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan } from './services/hiringApi';
@@ -59,7 +60,7 @@ export default function App() {
   const [toastVisible, setToastVisible] = useState(false);
   const [hasPreviousAnalysis, setHasPreviousAnalysis] = useState(false);
   const [transitionMessage, setTransitionMessage] = useState(null);
-  const [activeTab, setActiveTab] = useState('DOCKET');
+  const [activeTab, setActiveTab] = useState('DASHBOARD');
   const [user, setUser] = useState(null);
   const [currentRoute, setCurrentRoute] = useState('landing');
   const resultRef = useRef(null);
@@ -75,6 +76,9 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem('hireflow_last_analysis');
     if (saved) setHasPreviousAnalysis(true);
+
+    const savedTheme = localStorage.getItem('hireflow_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
   }, []);
 
   const loadPreviousAnalysis = () => {
@@ -406,6 +410,7 @@ export default function App() {
           </>
         )}
 
+        {activeTab === 'DASHBOARD' && <DashboardSection onNavigateToAnalyze={() => setActiveTab('DOCKET')} />}
         {activeTab === 'ARCHIVES' && <HistorySection />}
         {activeTab === 'EVIDENCE' && <InterviewSection />}
 

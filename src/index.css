@@ -290,3 +290,58 @@
 @utility animate-glow {
   animation: border-glow 3s infinite ease-in-out;
 }
+
+/* ─── Light Mode Overrides ────────────────────────────────────── */
+html[data-theme="light"] body {
+  background-color: #F4F4F5 !important;
+  background-image: radial-gradient(ellipse at 50% -5%, rgba(91, 140, 255, 0.12) 0%, transparent 50%) !important;
+  color: #09090B !important;
+}
+
+html[data-theme="light"] header,
+html[data-theme="light"] aside,
+html[data-theme="light"] nav {
+  background-color: #FFFFFF !important;
+  border-color: #E4E4E7 !important;
+}
+
+html[data-theme="light"] .bg-\[\#171A20\],
+html[data-theme="light"] .bg-\[\#09090B\] {
+  background-color: #FFFFFF !important;
+  border-color: #E4E4E7 !important;
+  color: #09090B !important;
+}
+
+html[data-theme="light"] .text-\[\#FAFAFA\],
+html[data-theme="light"] .text-gray-200 {
+  color: #09090B !important;
+}
+
+html[data-theme="light"] .text-\[\#A1A1AA\],
+html[data-theme="light"] .text-\[\#71717A\] {
+  color: #52525B !important;
+}
+
+/* ─── Midnight Navy Overrides ─────────────────────────────────── */
+html[data-theme="navy"] body {
+  background-color: #0B132B !important;
+  background-image: radial-gradient(ellipse at 50% -5%, rgba(59, 130, 246, 0.18) 0%, transparent 60%) !important;
+  color: #FAFAFA !important;
+}
+
+html[data-theme="navy"] header,
+html[data-theme="navy"] aside,
+html[data-theme="navy"] nav {
+  background-color: #0F172A !important;
+  border-color: #1E293B !important;
+}
+
+html[data-theme="navy"] .bg-\[\#171A20\] {
+  background-color: #1E293B !important;
+  border-color: #334155 !important;
+}
+
+html[data-theme="navy"] .bg-\[\#09090B\] {
+  background-color: #0F172A !important;
+  border-color: #1E293B !important;
+}
