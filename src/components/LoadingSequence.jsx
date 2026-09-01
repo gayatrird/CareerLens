@@ -50,7 +50,7 @@ export default function LoadingSequence({ onComplete }) {
 
         <h3 className="text-white font-headline-md text-xl mb-8 flex items-center gap-3">
           <span className="material-symbols-outlined text-[#5B8CFF] animate-spin-slow">hourglass_empty</span>
-          Initializing AI Court
+          Initializing Career Intelligence
         </h3>
 
         <div className="space-y-6 relative">

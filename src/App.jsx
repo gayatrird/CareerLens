@@ -74,16 +74,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem('hireflow_last_analysis');
+    const saved = localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis');
     if (saved) setHasPreviousAnalysis(true);
 
-    const savedTheme = localStorage.getItem('hireflow_theme') || 'dark';
+    const savedTheme = localStorage.getItem('careerlens_theme') || localStorage.getItem('hireflow_theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
   }, []);
 
   const loadPreviousAnalysis = () => {
     try {
-      const saved = localStorage.getItem('hireflow_last_analysis');
+      const saved = localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis');
       if (saved) {
         setAnalysisState(JSON.parse(saved));
         setHasPreviousAnalysis(false);
@@ -219,6 +219,7 @@ export default function App() {
     setAnalysisState(finalState);
 
     // Persist to localStorage
+    localStorage.setItem('careerlens_last_analysis', JSON.stringify(finalState));
     localStorage.setItem('hireflow_last_analysis', JSON.stringify(finalState));
     try {
       const existingArchives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
@@ -238,6 +239,7 @@ export default function App() {
       setAnalysisState(newState);
       
       // Update persistent storage
+      localStorage.setItem('careerlens_last_analysis', JSON.stringify(newState));
       localStorage.setItem('hireflow_last_analysis', JSON.stringify(newState));
       try {
         const archives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
@@ -261,7 +263,7 @@ export default function App() {
   };
 
   const handleShareAnalysis = () => {
-    const text = `HireFlow AI Analysis\nMatch Score: ${analysisState.recommendation?.overallMatch ?? 0}%\nRecommendation: ${analysisState.recommendation?.recommendation ?? ''}\n\n${analysisState.recommendation?.hiringInsight ?? ''}`;
+    const text = `CareerLens AI Analysis\nMatch Score: ${analysisState.recommendation?.overallMatch ?? 0}%\nRecommendation: ${analysisState.recommendation?.recommendation ?? ''}\n\n${analysisState.recommendation?.hiringInsight ?? ''}`;
     navigator.clipboard.writeText(text);
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 2000);

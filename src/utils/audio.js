@@ -2,7 +2,7 @@ let audioCtx = null;
 let masterVolume = 0.8;
 
 try {
-  const savedVol = localStorage.getItem('hireflow_master_volume');
+  const savedVol = localStorage.getItem('careerlens_master_volume') ?? localStorage.getItem('hireflow_master_volume');
   if (savedVol !== null) {
     masterVolume = parseFloat(savedVol);
   }
@@ -11,6 +11,7 @@ try {
 export const setMasterVolume = (val) => {
   masterVolume = Math.max(0, Math.min(1, val));
   try {
+    localStorage.setItem('careerlens_master_volume', masterVolume.toString());
     localStorage.setItem('hireflow_master_volume', masterVolume.toString());
   } catch (e) {}
 };

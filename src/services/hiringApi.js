@@ -313,12 +313,12 @@ Respond ONLY in this exact JSON:
 No other text.`;
 
   try {
-  const rawResponse = await callGemini(systemPrompt, `Score this resume section: "${text.substring(0, 300)}"`, {
+    const rawResponse = await callGroq(systemPrompt, `Score this resume section: "${text.substring(0, 300)}"`, {
       temperature: 0.1,
       maxTokens: 60
     });
     return JSON.parse(rawResponse);
-  } catch (e) {
+  } catch {
     return { ats: 50, technical: 50, communication: 50 };
   }
 };

@@ -37,9 +37,10 @@ export default function InterviewSection() {
       );
       localStorage.setItem('courtroom_archives', JSON.stringify(updatedRaw));
 
-      const last = JSON.parse(localStorage.getItem('hireflow_last_analysis'));
+      const last = JSON.parse(localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis') || 'null');
       if (last && last.id === item.id) {
         last.interviewData = result;
+        localStorage.setItem('careerlens_last_analysis', JSON.stringify(last));
         localStorage.setItem('hireflow_last_analysis', JSON.stringify(last));
       }
     } catch (err) {

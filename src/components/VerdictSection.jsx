@@ -121,9 +121,10 @@ export default function ResultSection({ recommendation, onNew, agentResults, dee
 
       // Save to archives
       try {
-        const last = JSON.parse(localStorage.getItem('hireflow_last_analysis'));
+        const last = JSON.parse(localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis') || 'null');
         if (last && last.id === analysisId) {
           last.interviewData = result;
+          localStorage.setItem('careerlens_last_analysis', JSON.stringify(last));
           localStorage.setItem('hireflow_last_analysis', JSON.stringify(last));
         }
 

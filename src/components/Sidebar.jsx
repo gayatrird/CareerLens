@@ -5,7 +5,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
 
   React.useEffect(() => {
     try {
-      const saved = localStorage.getItem('courtRoomArchives');
+      const saved = localStorage.getItem('careerlens_history') || localStorage.getItem('courtroom_archives') || localStorage.getItem('courtRoomArchives');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.length > 0) setHistoryCount(parsed.length + 11);

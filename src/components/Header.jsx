@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from '../services/firebase';
+import CareerLensLogo from './CareerLensLogo';
 
 export default function Header({ activeTab, setActiveTab }) {
   const [user, setUser] = useState(null);
@@ -48,14 +49,10 @@ export default function Header({ activeTab, setActiveTab }) {
     <header className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-[#0F1115]/90 backdrop-blur-xl border-b border-[#27272A] shadow-[0_1px_0_rgba(255,255,255,0.04)]">
       {/* Logo */}
       <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setActiveTab && setActiveTab('DOCKET')}>
-        <div className="relative w-7 h-7 flex items-center justify-center rounded-[8px] bg-[#FAFAFA] border border-[#FAFAFA] group-hover:bg-[#E4E4E7] transition-all duration-300">
-          <span className="text-[#09090B] font-bold text-xs tracking-tight" style={{ fontFamily: 'var(--font-inter)' }}>
-            HF
-          </span>
-        </div>
+        <CareerLensLogo size={28} />
         <div className="flex flex-col justify-center">
-          <span className="text-[15px] font-semibold text-[#FAFAFA] tracking-tight leading-none">
-            HireFlow
+          <span className="text-[16px] font-bold text-[#FAFAFA] tracking-tight leading-none group-hover:text-white transition-colors">
+            CareerLens
           </span>
         </div>
       </div>

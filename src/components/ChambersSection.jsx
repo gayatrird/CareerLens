@@ -6,25 +6,27 @@ export default function SettingsSection() {
   // Volume & Audio state
   const [volume, setVolumeState] = useState(() => Math.round(getMasterVolume() * 100));
   const [soundEnabled, setSoundEnabled] = useState(() => {
-    return localStorage.getItem('hireflow_sound_enabled') !== 'false';
+    const s = localStorage.getItem('careerlens_sound_enabled') ?? localStorage.getItem('hireflow_sound_enabled');
+    return s !== 'false';
   });
 
   // Appearance State
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('hireflow_theme') || 'dark';
+    return localStorage.getItem('careerlens_theme') || localStorage.getItem('hireflow_theme') || 'dark';
   });
 
   // AI Preferences
   const [seniority, setSeniority] = useState(() => {
-    return localStorage.getItem('hireflow_seniority') || 'senior';
+    return localStorage.getItem('careerlens_seniority') || localStorage.getItem('hireflow_seniority') || 'senior';
   });
 
   const [aiTone, setAiTone] = useState(() => {
-    return localStorage.getItem('hireflow_ai_tone') || 'balanced';
+    return localStorage.getItem('careerlens_ai_tone') || localStorage.getItem('hireflow_ai_tone') || 'balanced';
   });
 
   const [autoDeepScan, setAutoDeepScan] = useState(() => {
-    return localStorage.getItem('hireflow_auto_deep_scan') === 'true';
+    const s = localStorage.getItem('careerlens_auto_deep_scan') ?? localStorage.getItem('hireflow_auto_deep_scan');
+    return s === 'true';
   });
 
   const [toastMsg, setToastMsg] = useState('');
@@ -38,6 +40,7 @@ export default function SettingsSection() {
     setMasterVolume(val / 100);
     if (!soundEnabled && val > 0) {
       setSoundEnabled(true);
+      localStorage.setItem('careerlens_sound_enabled', 'true');
       localStorage.setItem('hireflow_sound_enabled', 'true');
     }
   };
@@ -45,6 +48,7 @@ export default function SettingsSection() {
   const handleToggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
+    localStorage.setItem('careerlens_sound_enabled', next ? 'true' : 'false');
     localStorage.setItem('hireflow_sound_enabled', next ? 'true' : 'false');
     if (!next) {
       setMasterVolume(0);
@@ -63,6 +67,7 @@ export default function SettingsSection() {
   // Theme change
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme);
+    localStorage.setItem('careerlens_theme', newTheme);
     localStorage.setItem('hireflow_theme', newTheme);
     document.documentElement.setAttribute('data-theme', newTheme);
     showToast(`Theme switched to ${newTheme.toUpperCase()} mode!`);
@@ -71,12 +76,14 @@ export default function SettingsSection() {
   // Save AI options
   const handleSeniorityChange = (val) => {
     setSeniority(val);
+    localStorage.setItem('careerlens_seniority', val);
     localStorage.setItem('hireflow_seniority', val);
     showToast('Target seniority updated.');
   };
 
   const handleToneChange = (val) => {
     setAiTone(val);
+    localStorage.setItem('careerlens_ai_tone', val);
     localStorage.setItem('hireflow_ai_tone', val);
     showToast('AI review tone preference saved.');
   };
@@ -84,6 +91,7 @@ export default function SettingsSection() {
   const handleToggleAutoDeepScan = () => {
     const next = !autoDeepScan;
     setAutoDeepScan(next);
+    localStorage.setItem('careerlens_auto_deep_scan', next ? 'true' : 'false');
     localStorage.setItem('hireflow_auto_deep_scan', next ? 'true' : 'false');
     showToast(next ? 'Auto Deep Scan enabled.' : 'Auto Deep Scan disabled.');
   };
@@ -96,7 +104,7 @@ export default function SettingsSection() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `hireflow_history_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `careerlens_history_backup_${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
       showToast('History exported successfully! 📁');
@@ -110,6 +118,7 @@ export default function SettingsSection() {
   const handleClearHistory = () => {
     if (window.confirm('Are you sure you want to clear all stored resume analyses? This action cannot be undone.')) {
       localStorage.removeItem('courtroom_archives');
+      localStorage.removeItem('careerlens_last_analysis');
       localStorage.removeItem('hireflow_last_analysis');
       showToast('All local analysis history cleared.');
     }
@@ -255,8 +264,10 @@ export default function SettingsSection() {
             }`}
           >
             <div className="flex items-center justify-between w-full">
-              <span className="material-symbols-outlined text-[#3B82F6]">night_sight</span>
-              {theme === 'navy' && <span className="w-2 h-2 rounded-full bg-[#3B82F6]"></span>}
+              <span className="font-mono text-[11px] font-bold tracking-wider text-[#3B82F6] px-2 py-0.5 rounded bg-[#3B82F6]/10 border border-[#3B82F6]/25 uppercase inline-block">
+                NIGHT_SIGHT
+              </span>
+              {theme === 'navy' && <span className="w-2 h-2 rounded-full bg-[#3B82F6] shrink-0"></span>}
             </div>
             <div>
               <p className="text-xs font-bold text-[#FAFAFA]">Midnight Navy</p>
