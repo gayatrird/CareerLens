@@ -60,7 +60,6 @@ export default function LoadingSequence({ onComplete }) {
           {steps.map((step, idx) => {
             const isPast = idx < activeStep;
             const isActive = idx === activeStep;
-            const isFuture = idx > activeStep;
 
             return (
               <div key={step.id} className="relative z-10">

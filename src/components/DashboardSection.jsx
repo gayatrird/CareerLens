@@ -98,9 +98,9 @@ export default function DashboardSection({ onNavigateToAnalyze }) {
 
   return (
     <div className="animate-fade-in-up max-w-6xl mx-auto pb-12 space-y-8">
-      {/* Header section */}
+      {/* Header section — HireFlow style: centered label + heading */}
       <div className="text-center my-6">
-        <span className="font-label-caps text-[#5B8CFF] text-[10px] tracking-[0.25em] uppercase font-bold">
+        <span className="font-label-caps text-[#4F7DF3] text-[10px] tracking-[0.25em] uppercase font-bold">
           DASHBOARD
         </span>
         <h1 className="font-headline-md text-2xl md:text-3xl text-[#FAFAFA] tracking-tight mt-1 font-bold">
@@ -108,12 +108,12 @@ export default function DashboardSection({ onNavigateToAnalyze }) {
         </h1>
       </div>
 
-      {/* Top 4 Stat Cards */}
+      {/* Top 4 Stat Cards — HireFlow: rounded-2xl p-6, w-10 h-10 icon, text-3xl font-black */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1 */}
         <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-6 flex flex-col items-center justify-center text-center shadow-lg hover:border-[#3F3F46] transition-all duration-200">
-          <div className="w-10 h-10 rounded-xl bg-[#5B8CFF]/10 border border-[#5B8CFF]/20 flex items-center justify-center mb-4">
-            <span className="material-symbols-outlined text-[#5B8CFF] text-xl">history</span>
+          <div className="w-10 h-10 rounded-xl bg-[#4F7DF3]/10 border border-[#4F7DF3]/20 flex items-center justify-center mb-4">
+            <span className="material-symbols-outlined text-[#4F7DF3] text-xl">history</span>
           </div>
           <span className="text-3xl font-black text-[#FAFAFA] tracking-tight mb-1">
             {recentAnalysesCount}
@@ -169,8 +169,8 @@ export default function DashboardSection({ onNavigateToAnalyze }) {
         <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-6 md:p-8 flex flex-col justify-between shadow-lg">
           <div>
             <div className="flex items-center gap-2.5 mb-5">
-              <div className="w-7 h-7 rounded-lg bg-[#5B8CFF]/15 border border-[#5B8CFF]/25 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[#5B8CFF] text-sm">work</span>
+              <div className="w-7 h-7 rounded-lg bg-[#4F7DF3]/15 border border-[#4F7DF3]/25 flex items-center justify-center">
+                <span className="material-symbols-outlined text-[#4F7DF3] text-sm">work</span>
               </div>
               <h3 className="font-headline-md text-base text-[#FAFAFA] font-semibold">Recommended roles</h3>
             </div>
@@ -182,7 +182,7 @@ export default function DashboardSection({ onNavigateToAnalyze }) {
                     <p className="text-sm font-semibold text-[#FAFAFA] line-clamp-1">{role.title}</p>
                     <p className="text-[11px] text-[#71717A] mt-0.5">{role.level}</p>
                   </div>
-                  <span className="bg-[#5B8CFF]/10 text-[#5B8CFF] border border-[#5B8CFF]/25 px-2.5 py-1 rounded-md text-xs font-bold shrink-0">
+                  <span className="bg-[#4F7DF3]/10 text-[#4F7DF3] border border-[#4F7DF3]/25 px-2.5 py-1 rounded-md text-xs font-bold shrink-0">
                     {role.match}
                   </span>
                 </div>
@@ -232,7 +232,7 @@ export default function DashboardSection({ onNavigateToAnalyze }) {
             <select
               value={selectedId1}
               onChange={(e) => setSelectedId1(e.target.value)}
-              className="w-full bg-[#09090B] border border-[#27272A] focus:border-[#5B8CFF] text-[#FAFAFA] rounded-xl px-4 py-3 text-xs outline-none transition-colors"
+              className="w-full bg-[#09090B] border border-[#27272A] focus:border-[#4F7DF3] text-[#FAFAFA] rounded-xl px-4 py-3 text-xs outline-none transition-colors"
             >
               <option value="">Select first analysis...</option>
               {archives.map(a => (
@@ -250,7 +250,7 @@ export default function DashboardSection({ onNavigateToAnalyze }) {
             <select
               value={selectedId2}
               onChange={(e) => setSelectedId2(e.target.value)}
-              className="w-full bg-[#09090B] border border-[#27272A] focus:border-[#5B8CFF] text-[#FAFAFA] rounded-xl px-4 py-3 text-xs outline-none transition-colors"
+              className="w-full bg-[#09090B] border border-[#27272A] focus:border-[#4F7DF3] text-[#FAFAFA] rounded-xl px-4 py-3 text-xs outline-none transition-colors"
             >
               <option value="">Select second analysis...</option>
               {archives.map(a => (
@@ -269,10 +269,10 @@ export default function DashboardSection({ onNavigateToAnalyze }) {
             <div className="bg-[#09090B] border border-[#27272A] rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between border-b border-[#1E2025] pb-3">
                 <div>
-                  <span className="font-label-caps text-xs text-[#5B8CFF] font-bold">#{item1.id}</span>
+                  <span className="font-label-caps text-xs text-[#4F7DF3] font-bold">#{item1.id}</span>
                   <p className="text-xs text-[#FAFAFA] font-medium line-clamp-1 mt-0.5">{item1.topic || 'Analysis 1'}</p>
                 </div>
-                <span className="text-xl font-black text-[#5B8CFF]">
+                <span className="text-xl font-black text-[#4F7DF3]">
                   {item1.recommendation?.overallMatch ?? item1.agentResults?.ats?.score ?? 0}%
                 </span>
               </div>

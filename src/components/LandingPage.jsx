@@ -3,42 +3,37 @@ import CareerLensLogo from './CareerLensLogo';
 
 export default function LandingPage({ onGetStarted }) {
   return (
-    <div 
-      className="min-h-screen bg-[#09090B] text-[#FAFAFA] font-sans relative overflow-hidden"
-      style={{
-        backgroundImage: 'radial-gradient(ellipse 80% 50% at 50% 0%, rgba(79, 125, 243, 0.16), transparent 70%), linear-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.12) 1px, transparent 1px)',
-        backgroundSize: '100% 100%, 40px 40px, 40px 40px',
-        backgroundPosition: '0 0, 0 0, 0 0'
-      }}
-    >
-      {/* Top Navigation - Transparent content layer directly on top of page grid */}
-      <header className="relative z-10 w-full bg-transparent border-b border-white/[0.08]">
-        <nav className="flex items-center justify-between px-6 py-5 max-w-7xl mx-auto bg-transparent">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={onGetStarted}>
-            <CareerLensLogo size={32} />
-            <span className="font-bold text-lg tracking-tight text-[#FAFAFA]">CareerLens</span>
-          </div>
+    <div className="min-h-screen bg-[#09090B] text-[#FAFAFA] font-sans relative overflow-hidden">
+      {/* Landing page background grid — strictly scoped here, NOT on body/html */}
+      <div className="landing-grid-overlay" />
 
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium text-[#A1A1AA]">
-            <a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">Features</a>
-            <a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works')?.scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">How it works</a>
-            <a href="#faq" className="hover:text-[#FAFAFA] transition-colors">FAQ</a>
-          </div>
+      {/* Top Navigation — transparent, grid visible behind it */}
+      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto border-b border-[#27272A]/50">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={onGetStarted}>
+          <CareerLensLogo size={28} />
+          <span className="font-bold text-lg tracking-tight">CareerLens</span>
+        </div>
 
-          <div className="flex items-center gap-4">
-            <button onClick={onGetStarted} className="text-sm font-medium text-[#FAFAFA] hover:text-[#4F7DF3] transition-colors hidden sm:block">
-              Sign In
-            </button>
-            <button 
-              onClick={onGetStarted}
-              className="bg-[#4F7DF3] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#436FE3] transition-colors shadow-[0_0_15px_rgba(79,125,243,0.3)]"
-            >
-              Get Started
-            </button>
-          </div>
-        </nav>
-      </header>
+        <div className="hidden md:flex items-center gap-8 text-sm font-medium text-[#A1A1AA]">
+          <a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">Features</a>
+          <a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">How it works</a>
+          <a href="#faq" className="hover:text-[#FAFAFA] transition-colors">FAQ</a>
+        </div>
 
+        <div className="flex items-center gap-4">
+          <button className="text-sm font-medium text-[#FAFAFA] hover:text-[#4F7DF3] transition-colors hidden sm:block">
+            Sign In
+          </button>
+          <button 
+            onClick={onGetStarted}
+            className="bg-[#4F7DF3] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#4069D0] transition-colors shadow-[0_0_15px_rgba(79,125,243,0.3)]"
+          >
+            Get Started
+          </button>
+        </div>
+      </nav>
+
+      {/* Hero — two column layout matching HireFlow */}
       <main className="relative z-10 max-w-7xl mx-auto px-6 pt-6 pb-12 lg:pt-10 lg:pb-24 grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-8 items-center">
         
         {/* Left Column: Copy */}
@@ -49,8 +44,7 @@ export default function LandingPage({ onGetStarted }) {
           </div>
           
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] mb-6">
-            See Your Career Clearly.<br />
-            <span className="text-[#4F7DF3]">Make Your Next Move Smarter.</span>
+            See Your Career<br />Clearly. <span className="text-[#4F7DF3]">Make Every Move Smarter.</span>
           </h1>
           
           <p className="text-lg sm:text-xl text-[#A1A1AA] max-w-xl mb-10 leading-relaxed">
@@ -60,10 +54,14 @@ export default function LandingPage({ onGetStarted }) {
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
             <button 
               onClick={onGetStarted}
-              className="w-full sm:w-auto bg-[#4F7DF3] text-white px-8 py-3.5 rounded-xl text-[15px] font-semibold hover:bg-[#436FE3] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(79,125,243,0.3)] hover:scale-105"
+              className="w-full sm:w-auto bg-[#4F7DF3] text-white px-8 py-3.5 rounded-xl text-[15px] font-semibold hover:bg-[#4069D0] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(79,125,243,0.3)]"
             >
               Start Analyzing for Free
               <span className="material-symbols-outlined text-[18px]">arrow_outward</span>
+            </button>
+            <button className="w-full sm:w-auto bg-transparent border border-[#27272A] text-[#FAFAFA] px-8 py-3.5 rounded-xl text-[15px] font-medium hover:border-[#3F3F46] hover:bg-[#111318] transition-all flex items-center justify-center gap-2">
+              <span className="material-symbols-outlined text-[18px]">play_circle</span>
+              Watch Demo
             </button>
           </div>
         </div>
@@ -86,29 +84,27 @@ export default function LandingPage({ onGetStarted }) {
               {/* Header */}
               <div className="flex items-center justify-between mb-6 border-b border-[#2D2F36] pb-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[11px] font-label-caps text-[#4F7DF3] tracking-widest uppercase">CAREER MATCH</span>
-                  </div>
-                  <h3 className="text-white font-bold text-lg">Senior React Engineer</h3>
-                  <p className="text-[#A1A1AA] text-xs mt-0.5">Google • Software Engineering</p>
+                  <span className="text-[10px] font-label-caps text-[#4F7DF3]">Career Match</span>
+                  <h3 className="text-white font-bold text-lg mt-0.5">Senior React Engineer</h3>
+                  <p className="text-[#A1A1AA] text-xs mt-1">Google • Software Engineering</p>
                 </div>
                 <div className="text-right">
                   <div className="text-[#22C55E] text-2xl font-black">88<span className="text-sm">%</span></div>
-                  <div className="text-[10px] text-[#22C55E] font-label-caps tracking-widest mt-0.5">STRONG MATCH</div>
+                  <div className="text-[10px] text-[#22C55E] font-label-caps tracking-widest mt-0.5">STRONG FIT</div>
                 </div>
               </div>
 
               {/* Rows */}
               <div className="space-y-4">
-                {/* ATS Compatibility */}
+                {/* ATS */}
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-full bg-[#3b82f6]/10 flex items-center justify-center">
                     <span className="material-symbols-outlined text-[#3b82f6] text-[16px]">manage_search</span>
                   </div>
                   <div className="flex-1">
                     <div className="flex justify-between text-xs mb-1.5">
-                      <span className="text-[#FAFAFA] font-medium">ATS Compatibility</span>
-                      <span className="text-[#A1A1AA]">90%</span>
+                      <span className="text-[#FAFAFA] font-medium">ATS Analyzer</span>
+                      <span className="text-[#A1A1AA]">90/100</span>
                     </div>
                     <div className="h-1.5 w-full bg-[#09090B] rounded-full overflow-hidden">
                       <div className="h-full bg-[#3b82f6] w-[90%]"></div>
@@ -124,7 +120,7 @@ export default function LandingPage({ onGetStarted }) {
                   <div className="flex-1">
                     <div className="flex justify-between text-xs mb-1.5">
                       <span className="text-[#FAFAFA] font-medium">Skill Match</span>
-                      <span className="text-[#A1A1AA]">84%</span>
+                      <span className="text-[#A1A1AA]">84/100</span>
                     </div>
                     <div className="h-1.5 w-full bg-[#09090B] rounded-full overflow-hidden">
                       <div className="h-full bg-[#8b5cf6] w-[84%]"></div>
@@ -132,7 +128,7 @@ export default function LandingPage({ onGetStarted }) {
                   </div>
                 </div>
 
-                {/* Technical Alignment */}
+                {/* Technical */}
                 <div className="flex items-center gap-4">
                   <div className="w-8 h-8 rounded-full bg-[#10b981]/10 flex items-center justify-center">
                     <span className="material-symbols-outlined text-[#10b981] text-[16px]">code</span>
@@ -140,7 +136,7 @@ export default function LandingPage({ onGetStarted }) {
                   <div className="flex-1">
                     <div className="flex justify-between text-xs mb-1.5">
                       <span className="text-[#FAFAFA] font-medium">Technical Depth</span>
-                      <span className="text-[#A1A1AA]">88%</span>
+                      <span className="text-[#A1A1AA]">88/100</span>
                     </div>
                     <div className="h-1.5 w-full bg-[#09090B] rounded-full overflow-hidden">
                       <div className="h-full bg-[#10b981] w-[88%]"></div>
@@ -177,7 +173,7 @@ export default function LandingPage({ onGetStarted }) {
         </div>
       </main>
 
-      {/* Features Section */}
+      {/* Features Section — HireFlow: py-24 bg-[#111318] border-y rounded-2xl p-8 */}
       <section id="features" className="relative z-10 py-24 bg-[#111318] border-y border-[#27272A]/50">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
@@ -197,18 +193,18 @@ export default function LandingPage({ onGetStarted }) {
               </div>
               <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">AI Resume & Job Matching</h3>
               <p className="text-[#A1A1AA] leading-relaxed text-sm">
-                Get your resume evaluated from multiple hiring angles simultaneously: ATS scoring, recruiter review, and manager perspectives to maximize alignment with target roles.
+                Get your resume reviewed by a simulated panel: ATS bot, Tech Recruiter, and Hiring Manager. Understand exactly how different roles view your application.
               </p>
             </div>
 
             {/* Feature 2 */}
             <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-8 hover:border-[#F59E0B]/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] group">
               <div className="w-12 h-12 rounded-xl bg-[#F59E0B]/10 border border-[#F59E0B]/20 flex items-center justify-center mb-6 group-hover:bg-[#F59E0B]/20 transition-colors">
-                <span className="material-symbols-outlined text-[#F59E0B] text-[24px]">explore</span>
+                <span className="material-symbols-outlined text-[#F59E0B] text-[24px]">manage_search</span>
               </div>
               <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Deep ATS & Skills Intelligence</h3>
               <p className="text-[#A1A1AA] leading-relaxed text-sm">
-                Identify missing keywords, assess skill gaps, and receive precision bullet rewrites structured with the STAR method for maximum clarity and hiring impact.
+                Identify exact missing keywords, analyze skills gaps, and get your bullet points automatically rewritten using the STAR method to maximize your matching score.
               </p>
             </div>
 
@@ -219,14 +215,14 @@ export default function LandingPage({ onGetStarted }) {
               </div>
               <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Interview Preparation Kit</h3>
               <p className="text-[#A1A1AA] leading-relaxed text-sm">
-                Don't just pass the resume screen. CareerLens automatically generates behavioral, technical, and project-specific questions tailored to your experience and target role.
+                Don't just pass the resume screen. CareerLens automatically generates behavioral and technical interview questions perfectly tailored to the gaps in your resume and the target JD.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* How it Works Section */}
+      {/* How it Works Section — HireFlow: py-24 bg-[#09090B] w-16 h-16 step circles */}
       <section id="how-it-works" className="relative z-10 py-24 bg-[#09090B]">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-20">
@@ -234,7 +230,7 @@ export default function LandingPage({ onGetStarted }) {
               How it <span className="text-[#4F7DF3]">Works</span>
             </h2>
             <p className="text-[#A1A1AA] text-lg max-w-2xl mx-auto">
-              Three simple steps to gain full clarity on your job applications and career trajectory.
+              Three simple steps to optimize your job hunt.
             </p>
           </div>
 
@@ -250,7 +246,7 @@ export default function LandingPage({ onGetStarted }) {
                 </div>
                 <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Upload Profile</h3>
                 <p className="text-[#A1A1AA] text-sm leading-relaxed">
-                  Drop your resume (PDF, DOCX) and paste the exact Job Description you want to target.
+                  Drop your current resume (PDF, DOCX) and paste the exact Job Description you are targeting.
                 </p>
               </div>
 
@@ -259,9 +255,9 @@ export default function LandingPage({ onGetStarted }) {
                 <div className="w-16 h-16 rounded-full bg-[#171A20] border-2 border-[#4F7DF3] flex items-center justify-center text-xl font-bold text-[#FAFAFA] mb-6 shadow-[0_0_20px_rgba(79,125,243,0.3)]">
                   2
                 </div>
-                <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">AI Intelligence Analysis</h3>
+                <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">AI Analysis</h3>
                 <p className="text-[#A1A1AA] text-sm leading-relaxed">
-                  Our autonomous agents evaluate your profile from ATS, recruiter, and hiring manager lenses simultaneously.
+                  Our autonomous agents review your profile from multiple perspectives simultaneously to find weaknesses.
                 </p>
               </div>
 
@@ -270,9 +266,9 @@ export default function LandingPage({ onGetStarted }) {
                 <div className="w-16 h-16 rounded-full bg-[#171A20] border-2 border-[#4F7DF3] flex items-center justify-center text-xl font-bold text-[#FAFAFA] mb-6 shadow-[0_0_20px_rgba(79,125,243,0.3)]">
                   3
                 </div>
-                <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Optimize & Prepare</h3>
+                <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Optimize & Prep</h3>
                 <p className="text-[#A1A1AA] text-sm leading-relaxed">
-                  Apply precision rewrites, close skill gaps, and practice tailored interview questions to land your offer.
+                  Apply the recommended bullet rewrites and use the generated interview questions to ace the real thing.
                 </p>
               </div>
             </div>
@@ -280,7 +276,7 @@ export default function LandingPage({ onGetStarted }) {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* CTA Section — HireFlow: py-20 bg-[#111318] border-t */}
       <section className="relative z-10 py-20 border-t border-[#27272A]/50 bg-[#111318]">
         <div className="max-w-4xl mx-auto px-6 text-center">
           <h2 className="text-3xl md:text-5xl font-bold tracking-tight mb-6 text-[#FAFAFA]">
@@ -291,7 +287,7 @@ export default function LandingPage({ onGetStarted }) {
           </p>
           <button 
             onClick={onGetStarted}
-            className="bg-[#4F7DF3] text-white px-10 py-4 rounded-xl text-[16px] font-semibold hover:bg-[#436FE3] transition-all inline-flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(79,125,243,0.4)] hover:scale-105"
+            className="bg-[#4F7DF3] text-white px-10 py-4 rounded-xl text-[16px] font-semibold hover:bg-[#4069D0] transition-all inline-flex items-center justify-center gap-2 shadow-[0_0_30px_rgba(79,125,243,0.4)] hover:scale-105"
           >
             Start Analyzing for Free
             <span className="material-symbols-outlined text-[20px]">arrow_forward</span>
@@ -299,12 +295,12 @@ export default function LandingPage({ onGetStarted }) {
         </div>
       </section>
 
-      {/* Footer */}
+      {/* Footer — HireFlow style */}
       <footer id="footer" className="relative z-10 border-t border-[#27272A] bg-[#09090B] py-12">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
           <div className="md:col-span-2">
             <div className="flex items-center gap-3 mb-4 cursor-pointer" onClick={onGetStarted}>
-              <CareerLensLogo size={28} />
+              <CareerLensLogo size={24} />
               <span className="font-bold text-lg tracking-tight text-[#FAFAFA]">CareerLens</span>
             </div>
             <p className="text-[#A1A1AA] text-sm max-w-xs leading-relaxed">
@@ -315,8 +311,8 @@ export default function LandingPage({ onGetStarted }) {
           <div>
             <h4 className="text-[#FAFAFA] font-semibold mb-4 text-sm">Product</h4>
             <ul className="space-y-2 text-sm text-[#A1A1AA]">
-              <li><a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">Features</a></li>
-              <li><a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works')?.scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">How it works</a></li>
+              <li><a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">Features</a></li>
+              <li><a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">How it works</a></li>
               <li><a href="#" onClick={(e) => { e.preventDefault(); onGetStarted(); }} className="hover:text-[#FAFAFA] transition-colors">Pricing</a></li>
             </ul>
           </div>

@@ -1,11 +1,25 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function CareerLensLogo({ 
   size = 32, 
-  className = '', 
-  cColor = '#3B82F6', 
-  lColor = '#FFFFFF' 
+  className = '' 
 }) {
+  const [theme, setTheme] = useState(() => 
+    document.documentElement.getAttribute('data-theme') || 'dark'
+  );
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  // Theme-aware colors: C is always blue, L varies
+  const cColor = '#4F7DF3';
+  const lColor = theme === 'light' ? '#1A1D23' : '#FFFFFF';
+
   return (
     <svg 
       width={size} 
@@ -13,7 +27,7 @@ export default function CareerLensLogo({
       viewBox="0 0 100 100" 
       fill="none" 
       xmlns="http://www.w3.org/2000/svg"
-      className={`inline-block flex-shrink-0 transition-transform duration-200 hover:scale-105 ${className}`}
+      className={`inline-block flex-shrink-0 ${className}`}
       aria-label="CareerLens Logo"
     >
       {/* Clean geometric C */}

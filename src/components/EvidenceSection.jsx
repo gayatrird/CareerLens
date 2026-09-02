@@ -101,7 +101,7 @@ export default function InterviewSection() {
             : 'General';
           
           return (
-            <div key={item.id} className="bg-[#171A20] border border-[#2D2F36] rounded-xl overflow-hidden transition-all duration-200">
+            <div key={item.id} className="interview-card bg-[#171A20] border border-[#2D2F36] rounded-xl overflow-hidden transition-all duration-200">
               <div 
                 className="p-5 cursor-pointer hover:bg-[#1C1F26] flex flex-col md:flex-row md:items-center justify-between gap-4"
                 onClick={() => {

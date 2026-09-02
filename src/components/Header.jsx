@@ -38,20 +38,24 @@ export default function Header({ activeTab, setActiveTab }) {
     }
   };
 
+  // HireFlow nav style: uppercase tracking-[0.15em] font-semibold text-xs
   const navClass = (tab) =>
     `font-inter uppercase tracking-[0.15em] font-semibold text-xs transition-all duration-200 pb-1 border-b-2 ${
       activeTab === tab
-        ? 'text-[#5B8CFF] border-[#5B8CFF]'
+        ? 'text-[#4F7DF3] border-[#4F7DF3]'
         : 'text-[#71717A] hover:text-[#A1A1AA] border-transparent'
     }`;
 
   return (
     <header className="fixed top-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-[#0F1115]/90 backdrop-blur-xl border-b border-[#27272A] shadow-[0_1px_0_rgba(255,255,255,0.04)]">
-      {/* Logo */}
-      <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setActiveTab && setActiveTab('DOCKET')}>
+      {/* Logo + Brand */}
+      <div
+        className="flex items-center gap-3 cursor-pointer group"
+        onClick={() => setActiveTab && setActiveTab('DASHBOARD')}
+      >
         <CareerLensLogo size={28} />
         <div className="flex flex-col justify-center">
-          <span className="text-[16px] font-bold text-[#FAFAFA] tracking-tight leading-none group-hover:text-white transition-colors">
+          <span className="text-[15px] font-semibold text-[#FAFAFA] tracking-tight leading-none group-hover:opacity-90 transition-opacity">
             CareerLens
           </span>
         </div>
@@ -62,16 +66,16 @@ export default function Header({ activeTab, setActiveTab }) {
         {setActiveTab && (
           <nav className="hidden md:flex gap-7 items-center">
             <button className={navClass('DASHBOARD')} onClick={() => setActiveTab('DASHBOARD')}>DASHBOARD</button>
-            <button className={navClass('DOCKET')} onClick={() => setActiveTab('DOCKET')}>ANALYZE</button>
-            <button className={navClass('ARCHIVES')} onClick={() => setActiveTab('ARCHIVES')}>HISTORY</button>
-            <button className={navClass('EVIDENCE')} onClick={() => setActiveTab('EVIDENCE')}>INTERVIEW</button>
+            <button className={navClass('DOCKET')}    onClick={() => setActiveTab('DOCKET')}>ANALYZE</button>
+            <button className={navClass('ARCHIVES')}  onClick={() => setActiveTab('ARCHIVES')}>HISTORY</button>
+            <button className={navClass('EVIDENCE')}  onClick={() => setActiveTab('EVIDENCE')}>INTERVIEW</button>
           </nav>
         )}
 
         {user ? (
           <div className="relative">
             <button
-              className="w-8 h-8 rounded-full border border-[#3F3F46] hover:border-[#5B8CFF]/60 overflow-hidden transition-all duration-200 focus:outline-none flex items-center justify-center bg-[#18181B]"
+              className="w-8 h-8 rounded-full border border-[#3F3F46] hover:border-[#4F7DF3]/60 overflow-hidden transition-all duration-200 focus:outline-none flex items-center justify-center bg-[#18181B]"
               onClick={() => setDropdownOpen(!dropdownOpen)}
             >
               {user.photoURL && !imgFailed ? (
@@ -83,14 +87,14 @@ export default function Header({ activeTab, setActiveTab }) {
                   onError={() => setImgFailed(true)}
                 />
               ) : (
-                <span className="text-[#5B8CFF] font-semibold text-sm uppercase">
+                <span className="text-[#4F7DF3] font-semibold text-sm uppercase">
                   {(user.displayName || user.email || 'U').charAt(0)}
                 </span>
               )}
             </button>
             {dropdownOpen && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)}></div>
+                <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
                 <div className="absolute right-0 mt-2 w-52 bg-[#18181B] border border-[#27272A] rounded-xl shadow-[0_8px_30px_rgba(0,0,0,0.4)] z-50 overflow-hidden animate-fade-in-up">
                   <div className="px-4 py-3 border-b border-[#27272A]">
                     <p className="text-sm font-medium text-[#FAFAFA] truncate">{user.displayName || 'User'}</p>
@@ -110,7 +114,7 @@ export default function Header({ activeTab, setActiveTab }) {
         ) : (
           <button
             onClick={handleLogin}
-            className="bg-[#5B8CFF] hover:bg-[#4F7CFF] text-white font-label-caps px-4 py-1.5 rounded-lg transition-all duration-200 text-xs tracking-wider hover:scale-[1.02] active:scale-95"
+            className="bg-[#4F7DF3] hover:bg-[#4069D0] text-white font-label-caps px-4 py-1.5 rounded-lg transition-all duration-200 text-xs tracking-wider hover:scale-[1.02] active:scale-95"
           >
             SIGN IN
           </button>

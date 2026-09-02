@@ -25,12 +25,12 @@ const delay = ms => new Promise(res => setTimeout(res, ms));
 function BackgroundParticles() {
   return (
     <div className="fixed inset-0 pointer-events-none z-[0] overflow-hidden">
-      <div className="absolute top-[20%] left-[10%] w-1.5 h-1.5 rounded-full bg-[#5B8CFF]/25 shadow-[0_0_12px_rgba(91,140,255,0.5)] animate-[float_10s_infinite_ease-in-out]"></div>
-      <div className="absolute top-[60%] left-[80%] w-1 h-1 rounded-full bg-[#5B8CFF]/20 shadow-[0_0_8px_rgba(91,140,255,0.4)] animate-[float_15s_infinite_ease-in-out_2s]"></div>
-      <div className="absolute top-[80%] left-[30%] w-2 h-2 rounded-full bg-[#5B8CFF]/15 shadow-[0_0_10px_rgba(91,140,255,0.3)] animate-[float_12s_infinite_ease-in-out_1s]"></div>
-      <div className="absolute top-[30%] left-[60%] w-1 h-1 rounded-full bg-[#5B8CFF]/30 shadow-[0_0_6px_rgba(91,140,255,0.5)] animate-[float_14s_infinite_ease-in-out_4s]"></div>
-      <div className="absolute top-[10%] left-[90%] w-1.5 h-1.5 rounded-full bg-[#5B8CFF]/20 shadow-[0_0_8px_rgba(91,140,255,0.4)] animate-[float_18s_infinite_ease-in-out_3s]"></div>
-      <div className="absolute top-[70%] left-[15%] w-1 h-1 rounded-full bg-[#5B8CFF]/25 shadow-[0_0_6px_rgba(91,140,255,0.5)] animate-[float_11s_infinite_ease-in-out_5s]"></div>
+      <div className="absolute top-[20%] left-[10%] w-1.5 h-1.5 rounded-full bg-[#4F7DF3]/25 shadow-[0_0_12px_rgba(79,125,243,0.5)] animate-[float_10s_infinite_ease-in-out]"></div>
+      <div className="absolute top-[60%] left-[80%] w-1 h-1 rounded-full bg-[#4F7DF3]/20 shadow-[0_0_8px_rgba(79,125,243,0.4)] animate-[float_15s_infinite_ease-in-out_2s]"></div>
+      <div className="absolute top-[80%] left-[30%] w-2 h-2 rounded-full bg-[#4F7DF3]/15 shadow-[0_0_10px_rgba(79,125,243,0.3)] animate-[float_12s_infinite_ease-in-out_1s]"></div>
+      <div className="absolute top-[30%] left-[60%] w-1 h-1 rounded-full bg-[#4F7DF3]/30 shadow-[0_0_6px_rgba(79,125,243,0.5)] animate-[float_14s_infinite_ease-in-out_4s]"></div>
+      <div className="absolute top-[10%] left-[90%] w-1.5 h-1.5 rounded-full bg-[#4F7DF3]/20 shadow-[0_0_8px_rgba(79,125,243,0.4)] animate-[float_18s_infinite_ease-in-out_3s]"></div>
+      <div className="absolute top-[70%] left-[15%] w-1 h-1 rounded-full bg-[#4F7DF3]/25 shadow-[0_0_6px_rgba(79,125,243,0.5)] animate-[float_11s_infinite_ease-in-out_5s]"></div>
     </div>
   );
 }
@@ -59,7 +59,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [hasPreviousAnalysis, setHasPreviousAnalysis] = useState(false);
-  const [transitionMessage, setTransitionMessage] = useState(null);
+
   const [activeTab, setActiveTab] = useState('DASHBOARD');
   const [user, setUser] = useState(null);
   const [currentRoute, setCurrentRoute] = useState('landing');
@@ -101,8 +101,7 @@ export default function App() {
           await signInWithPopup(auth, googleProvider);
         } catch (error) {
           console.error("Login failed", error);
-          setErrorMsg("Login failed: " + error.message);
-          return;
+          // Allow proceeding without login
         }
       }
       // Allow proceeding without login
@@ -262,13 +261,6 @@ export default function App() {
     }
   };
 
-  const handleShareAnalysis = () => {
-    const text = `CareerLens AI Analysis\nMatch Score: ${analysisState.recommendation?.overallMatch ?? 0}%\nRecommendation: ${analysisState.recommendation?.recommendation ?? ''}\n\n${analysisState.recommendation?.hiringInsight ?? ''}`;
-    navigator.clipboard.writeText(text);
-    setToastVisible(true);
-    setTimeout(() => setToastVisible(false), 2000);
-  };
-
   const handleNewAnalysis = () => {
     setAnalysisState({
       resumeText: '',
@@ -283,7 +275,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const isAnalyzing = analysisState.status === 'analyzing';
+
   const agentScores = {
     ats: analysisState.agentResults?.ats?.score,
     recruiter: analysisState.agentResults?.recruiter?.score,
@@ -300,13 +292,13 @@ export default function App() {
   }
 
   return (
-    <div className="text-on-background selection:bg-primary/30 selection:text-primary min-h-screen relative">
+    <div className="text-on-background selection:bg-primary/30 selection:text-primary min-h-screen relative" data-page="app">
       <BackgroundParticles />
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {toastVisible && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-[#171A20] border border-[#5B8CFF]/40 text-[#5B8CFF] px-6 py-3 rounded-xl shadow-lg z-50 animate-fade-in-up text-sm font-label-caps tracking-wider">
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-[#171A20] border border-[#4F7DF3]/40 text-[#4F7DF3] px-6 py-3 rounded-xl shadow-lg z-50 animate-fade-in-up text-sm font-label-caps tracking-wider">
           Copied to clipboard! 📋
         </div>
       )}
@@ -314,35 +306,23 @@ export default function App() {
       <main className="lg:ml-64 pt-24 pb-32 px-4 md:px-10 max-w-7xl mx-auto">
         {/* Previous analysis banner */}
         {hasPreviousAnalysis && analysisState.status === 'idle' && (
-          <div className="w-full max-w-[900px] mx-auto mb-6 bg-[#171A20] border border-[#2D2F36] px-6 py-3 rounded-xl shadow-lg animate-fade-in-up flex items-center justify-between gap-4">
+          <div className="w-full mx-auto mb-5 bg-[#171A20] border border-[#2D2F36] px-5 py-3 rounded-xl animate-fade-in-up flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#5B8CFF] text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>history</span>
-              <span className="text-sm text-[#A1A1AA]">You have a previous analysis on record.</span>
+              <span className="material-symbols-outlined text-[#4F7DF3] text-lg" style={{ fontVariationSettings: "'FILL' 1" }}>history</span>
+              <span className="text-[13px] text-[#8B8F98]">You have a previous analysis on record.</span>
             </div>
             <div className="flex items-center gap-3">
-              <button onClick={loadPreviousAnalysis} className="text-[#5B8CFF] text-sm font-label-caps hover:brightness-110 underline">View it?</button>
-              <button onClick={() => setHasPreviousAnalysis(false)} className="text-[#71717A] hover:text-[#A1A1AA] material-symbols-outlined text-sm">close</button>
+              <button onClick={loadPreviousAnalysis} className="text-[#4F7DF3] text-[12px] font-semibold hover:underline">View it?</button>
+              <button onClick={() => setHasPreviousAnalysis(false)} className="text-[#6B7080] hover:text-[#8B8F98] material-symbols-outlined text-[16px]">close</button>
             </div>
           </div>
         )}
 
         {/* Error message */}
         {errorMsg && (
-          <div className="w-full md:w-3/4 mx-auto mb-6 bg-red-900/20 border border-primary text-primary px-6 py-4 rounded-xl flex items-center justify-between">
-            <p>{errorMsg}</p>
-            <button onClick={() => setErrorMsg('')} className="material-symbols-outlined text-primary/50 hover:text-primary ml-4">close</button>
-          </div>
-        )}
-
-        {/* Transition overlay */}
-        {transitionMessage && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-md animate-fade-in-up">
-            <div className="text-center px-8">
-              <h2 className="text-2xl md:text-4xl font-headline-md text-[#5B8CFF] tracking-[0.1em] uppercase text-center">
-                <TypewriterText text={transitionMessage} speed={25} />
-              </h2>
-              <div className="mt-4 h-px w-48 mx-auto bg-gradient-to-r from-transparent via-[#5B8CFF]/40 to-transparent"></div>
-            </div>
+          <div className="w-full mx-auto mb-5 bg-red-500/10 border border-red-500/25 text-red-400 px-5 py-3 rounded-xl flex items-center justify-between">
+            <p className="text-[13px]">{errorMsg}</p>
+            <button onClick={() => setErrorMsg('')} className="material-symbols-outlined text-red-400/60 hover:text-red-400 ml-4 text-[18px]">close</button>
           </div>
         )}
 
