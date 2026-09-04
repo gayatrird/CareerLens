@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { companies } from '../config/agents';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
+import { saveResume, loadSavedResumes, removeSavedResume, markResumeUsed } from '../services/savedResume';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
@@ -15,6 +16,18 @@ const jdTemplates = [
 
 const inputClass = "w-full bg-[#111318] border border-[#27272A] rounded-xl focus:border-[#5B8CFF] focus:ring-1 focus:ring-[#5B8CFF]/30 focus:outline-none py-4 px-5 text-[#FAFAFA] text-sm placeholder:text-[#3F3F46] transition-all duration-200 resize-none";
 
+// Compact relative label for the "Last used • …" line of the saved-resume row.
+function lastUsedLabel(ts) {
+  if (!ts) return '';
+  const then = new Date(ts);
+  const now = new Date();
+  const dayStart = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((dayStart(now) - dayStart(then)) / 86400000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
   const [jobDescription, setJobDescription] = useState('');
   const [companyMode, setCompanyMode] = useState('general');
@@ -22,7 +35,25 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
   const [resumeText, setResumeText] = useState('');
   const [fileName, setFileName] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [savedResumes, setSavedResumes] = useState([]); // MRU-first list from IndexedDB
+  const [savedLoaded, setSavedLoaded] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Restore saved resumes (survives refreshes and browser restarts).
+  // The most recently used resume is first.
+  useEffect(() => {
+    let cancelled = false;
+    loadSavedResumes()
+      .then((entries) => {
+        if (!cancelled && Array.isArray(entries) && entries.length > 0) {
+          setSavedResumes(entries);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSavedLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
 
   const extractTextFromPDF = async (arrayBuffer) => {
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -68,7 +99,18 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
       }
       
       const cleaned = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{3,}/g, '\n').trim();
-      setResumeText(cleaned || text);
+      const resumeSource = cleaned || text;
+      setResumeText(resumeSource);
+      // Persist the uploaded resume locally (browser-only). Non-fatal on failure.
+      const ok = await saveResume({ name: file.name, type: file.type, size: file.size, lastModified: file.lastModified, text: resumeSource, file });
+      if (ok) {
+        // The newest upload becomes the current resume at the top of the list.
+        setSavedResumes((prev) => [
+          { name: file.name, text: resumeSource, size: file.size, lastUsedAt: Date.now() },
+          ...prev.filter((r) => r.name !== file.name),
+        ].slice(0, 5));
+        setDropdownOpen(false);
+      }
     } catch (err) {
       console.error("Error reading file:", err);
       setLocalError('Failed to read file. Please try pasting the text instead.');
@@ -87,8 +129,67 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
     if (file) handleFileRead(file);
   };
 
+  // Load a saved resume into the analysis flow and collapse the dropdown.
+  const selectSavedResume = (entry) => {
+    if (!entry || isAnalyzing) return;
+    setFileName(entry.name);
+    setResumeText(entry.text);
+    setLocalError('');
+    setDropdownOpen(false);
+  };
+
+  // Use the resume with the given name and make it the top (last-used) resume.
+  const chooseSavedResume = (name) => {
+    const entry = savedResumes.find((r) => r.name === name);
+    if (!entry) return;
+    selectSavedResume(entry);
+    // Reorder locally for instant UI feedback and persist the new order.
+    setSavedResumes((prev) => [
+      { ...entry, lastUsedAt: Date.now() },
+      ...prev.filter((r) => r.name !== name),
+    ].slice(0, 5));
+    markResumeUsed(name).catch(() => {});
+  };
+
+  // Removing the currently loaded file also deletes that resume from the saved
+  // list, returning the UI to the normal upload state.
+  const handleRemoveFile = () => {
+    const name = fileName;
+    setFileName('');
+    setResumeText('');
+    setLocalError('');
+    if (name) {
+      removeSavedResume(name).then((removed) => {
+        if (removed) {
+          setSavedResumes((prev) => prev.filter((r) => r.name !== name));
+          setDropdownOpen(false);
+        }
+      }).catch(() => {});
+    }
+  };
+
+  // Delete one saved resume from the dropdown (compact trash inside its row).
+  const handleDeleteSaved = (name) => {
+    if (isAnalyzing) return;
+    removeSavedResume(name).then((removed) => {
+      if (!removed) return;
+      setSavedResumes((prev) => prev.filter((r) => r.name !== name));
+      setDropdownOpen(false);
+      // If the deleted resume was loaded for analysis, return to the normal
+      // upload state so we never analyze a file that no longer exists.
+      if (fileName === name) {
+        setFileName('');
+        setResumeText('');
+      }
+    }).catch(() => {});
+  };
+
   const handleStart = () => {
-    if (!resumeText.trim() && !fileName) {
+    let resumeSource = (resumeText || '').trim();
+    // When nothing was uploaded/pasted this session, fall back to the
+    // last-used saved resume.
+    if (!resumeSource && savedResumes.length > 0) resumeSource = savedResumes[0].text;
+    if (!resumeSource && !fileName) {
       setLocalError('Please upload your resume or paste its content below.');
       return;
     }
@@ -97,7 +198,7 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
       return;
     }
     setLocalError('');
-    onStartAnalysis(resumeText || fileName, jobDescription.trim(), companyMode);
+    onStartAnalysis(resumeSource || fileName, jobDescription.trim(), companyMode);
   };
 
   const fillTemplate = (text) => {
@@ -185,6 +286,89 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
             <div className="flex flex-col gap-3">
               <label className="font-label-caps text-[#A1A1AA] tracking-widest text-[10px]">RESUME</label>
 
+              {/* Saved resumes — compact selector: last used shown, others in a dropdown */}
+              {savedLoaded && savedResumes.length > 0 && (
+                <div className="rounded-xl border border-[#27272A] bg-[#111318] overflow-hidden">
+                  {/* Current (last used) resume */}
+                  <div className="px-3.5 py-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="material-symbols-outlined text-[#22C55E] text-[15px] shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                      <p className="text-[12px] font-medium text-[#FAFAFA] truncate flex-1 min-w-0" title={savedResumes[0].name}>{savedResumes[0].name}</p>
+                      {(dropdownOpen || savedResumes.length === 1) && (
+                        <button
+                          onClick={() => handleDeleteSaved(savedResumes[0].name)}
+                          disabled={isAnalyzing}
+                          className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0"
+                          title="Remove saved resume"
+                          aria-label={`Remove ${savedResumes[0].name}`}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">delete</span>
+                        </button>
+                      )}
+                      {savedResumes.length > 1 && (
+                        <button
+                          onClick={() => setDropdownOpen((v) => !v)}
+                          disabled={isAnalyzing}
+                          className="text-[#71717A] hover:text-[#FAFAFA] transition-colors shrink-0"
+                          title={dropdownOpen ? 'Hide other saved resumes' : 'Show other saved resumes'}
+                          aria-label={dropdownOpen ? 'Hide other saved resumes' : 'Show other saved resumes'}
+                        >
+                          <span className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-3 mt-1.5">
+                      <p className="text-[10px] text-[#52525B] truncate">Last used • {lastUsedLabel(savedResumes[0].lastUsedAt)}</p>
+                      <button
+                        onClick={() => chooseSavedResume(savedResumes[0].name)}
+                        disabled={isAnalyzing}
+                        className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide bg-[#4F7DF3] text-white hover:bg-[#436FE3] transition-all duration-200 disabled:opacity-50 shrink-0"
+                      >
+                        Use
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Other saved resumes (hidden until the arrow is clicked) */}
+                  {dropdownOpen && savedResumes.length > 1 && (
+                    <div className="border-t border-[#27272A]">
+                      {savedResumes.slice(1).map((r) => (
+                        <div key={r.name} className="flex items-center gap-2 px-3.5 py-2 border-b border-[#27272A]/70 last:border-b-0 hover:bg-[#09090B]/60 transition-colors">
+                          <span className="material-symbols-outlined text-[#3F3F46] text-[14px] shrink-0">radio_button_unchecked</span>
+                          <p className="text-[12px] text-[#A1A1AA] truncate flex-1 min-w-0" title={r.name}>{r.name}</p>
+                          <button
+                            onClick={() => handleDeleteSaved(r.name)}
+                            disabled={isAnalyzing}
+                            className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0"
+                            title="Remove saved resume"
+                            aria-label={`Remove ${r.name}`}
+                          >
+                            <span className="material-symbols-outlined text-[14px]">delete</span>
+                          </button>
+                          <button
+                            onClick={() => chooseSavedResume(r.name)}
+                            disabled={isAnalyzing}
+                            className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide border border-[#27272A] bg-[#09090B] text-[#A1A1AA] hover:text-[#FAFAFA] hover:border-[#3F3F46] transition-all duration-200 disabled:opacity-50 shrink-0"
+                          >
+                            Use
+                          </button>
+                        </div>
+                      ))}
+                      <div className="px-3.5 py-2 border-t border-[#27272A] flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[#4F7DF3] text-[14px] shrink-0">add</span>
+                        <button
+                          onClick={() => !isAnalyzing && fileInputRef.current?.click()}
+                          disabled={isAnalyzing}
+                          className="text-[11px] font-medium text-[#4F7DF3] hover:text-[#5B8CFF] transition-colors"
+                        >
+                          Upload New Resume
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Drag-drop zone */}
               <div
                 className={`relative border-2 border-dashed rounded-xl flex flex-col items-center justify-center min-h-[200px] cursor-pointer transition-all duration-300 group ${
@@ -214,7 +398,7 @@ export default function UploadSection({ onStartAnalysis, isAnalyzing }) {
                     </div>
                     <p className="font-label-caps text-[#22C55E] tracking-wider text-[10px] text-center">{fileName}</p>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setFileName(''); setResumeText(''); }}
+                      onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
                       className="text-[#71717A] hover:text-[#A1A1AA] text-xs underline"
                     >
                       Remove

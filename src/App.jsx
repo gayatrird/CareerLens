@@ -9,13 +9,14 @@ import StepIndicators from './components/RoundIndicators';
 import LoadingSequence from './components/LoadingSequence';
 import AnalysisSection from './components/ArgumentsSection';
 import ResultSection from './components/VerdictSection';
+import JobMatchSection from './components/JobMatchSection';
 import HistorySection from './components/ArchivesSection';
 import InterviewSection from './components/EvidenceSection';
 import SettingsSection from './components/ChambersSection';
 import DashboardSection from './components/DashboardSection';
 import MatchScoreboard from './components/Scoreboard';
 import SubscriptionSection from './components/SubscriptionSection';
-import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan } from './services/hiringApi';
+import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan, subscribeRateLimitRetry } from './services/hiringApi';
 import { computeJobMatch } from './services/jobMatch';
 import { initAudio } from './utils/audio';
 import TypewriterText from './components/TypewriterText';
@@ -62,6 +63,9 @@ export default function App() {
   });
 
   const [errorMsg, setErrorMsg] = useState('');
+  // Shown while the Groq API is backing off and retrying a 429, so the
+  // analysis UI never looks frozen during a rate-limit window.
+  const [rateLimitNotice, setRateLimitNotice] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [hasPreviousAnalysis, setHasPreviousAnalysis] = useState(false);
 
@@ -122,6 +126,7 @@ export default function App() {
     }
 
     setErrorMsg('');
+    setRateLimitNotice('');
     setHasPreviousAnalysis(false);
     initAudio();
 
@@ -140,9 +145,14 @@ export default function App() {
 
   const handleSequenceComplete = async () => {
     setAnalysisState(prev => ({ ...prev, status: 'analyzing' }));
+    // Surface Groq 429 retries live: callGroq notifies this listener each time
+    // it backs off, and we render the notice instead of appearing frozen.
+    const unsubscribeRateLimit = subscribeRateLimitRetry(setRateLimitNotice);
     try {
       await runAnalysisEngine(analysisState.resumeText, analysisState.jobDescription, analysisState.companyMode);
+      setRateLimitNotice('');
     } catch (error) {
+      setRateLimitNotice('');
       console.error(error);
       const errorMsgText = error.message || '';
       const isRateLimit = errorMsgText.includes('RATE_LIMIT_EXCEEDED') || errorMsgText.includes('429');
@@ -152,13 +162,27 @@ export default function App() {
         setAnalysisState(prev => ({ ...prev, status: 'idle' }));
         setActiveTab('SUBSCRIPTION');
       } else if (isRateLimit) {
-        setErrorMsg("Service is busy (Rate limit). Please wait a few seconds and try again.");
+        // All bounded retries were exhausted while Groq stayed rate limited.
+        setErrorMsg("AI service stayed rate limited after several automatic retries. Wait about a minute, then press Try Again.");
         setAnalysisState(prev => ({ ...prev, status: 'error' }));
       } else {
         setErrorMsg("Analysis error. Please try again. (" + errorMsgText + ")");
         setAnalysisState(prev => ({ ...prev, status: 'error' }));
       }
+    } finally {
+      unsubscribeRateLimit();
     }
+  };
+
+  // Re-runs the last analysis after a failure (e.g. an exhausted rate limit)
+  // without making the user re-upload the resume.
+  const handleRetryAnalysis = async () => {
+    const { resumeText, jobDescription, companyMode } = analysisState;
+    if (!resumeText || !jobDescription) {
+      handleNewAnalysis();
+      return;
+    }
+    await handleStartAnalysis(resumeText, jobDescription, companyMode);
   };
 
   const runAnalysisEngine = async (resumeText, jobDescription, companyMode) => {
@@ -351,7 +375,25 @@ export default function App() {
         {errorMsg && (
           <div className="w-full mx-auto mb-5 bg-red-500/10 border border-red-500/25 text-red-400 px-5 py-3 rounded-xl flex items-center justify-between">
             <p className="text-[13px]">{errorMsg}</p>
-            <button onClick={() => setErrorMsg('')} className="material-symbols-outlined text-red-400/60 hover:text-red-400 ml-4 text-[18px]">close</button>
+            <div className="flex items-center gap-2 shrink-0">
+              {analysisState.status === 'error' && analysisState.resumeText && (
+                <button
+                  onClick={handleRetryAnalysis}
+                  className="text-[12px] font-semibold text-red-400 border border-red-500/40 rounded-lg px-3 py-1.5 hover:bg-red-500/10 transition-colors"
+                >
+                  ↻ Try Again
+                </button>
+              )}
+              <button onClick={() => setErrorMsg('')} className="material-symbols-outlined text-red-400/60 hover:text-red-400 ml-1 text-[18px]">close</button>
+            </div>
+          </div>
+        )}
+
+        {/* Transient rate-limit retry notice — shown while callGroq backs off */}
+        {analysisState.status === 'analyzing' && rateLimitNotice && (
+          <div className="w-full mx-auto mb-5 bg-amber-400/10 border border-amber-400/30 text-amber-300 px-5 py-3 rounded-xl flex items-center gap-3">
+            <span className="material-symbols-outlined text-amber-300 text-[18px]">hourglass_top</span>
+            <p className="text-[13px]">{rateLimitNotice}</p>
           </div>
         )}
 
@@ -405,6 +447,9 @@ export default function App() {
             {/* Result section */}
             {analysisState.status === 'complete' && analysisState.recommendation && (
               <div ref={resultRef}>
+                {analysisState.jobMatch && (
+                  <JobMatchSection jobMatch={analysisState.jobMatch} />
+                )}
                 <ResultSection
                   recommendation={analysisState.recommendation}
                   agentResults={analysisState.agentResults}

@@ -274,7 +274,7 @@ export default function ResultSection({ recommendation, onNew, agentResults, dee
               <svg className="w-full h-full transform -rotate-90">
                 <circle className="text-[#27272A]" cx="88" cy="88" fill="transparent" r="70" stroke="currentColor" strokeWidth="5" />
                 <circle
-                  className={confData.strokeClass}
+                  className={`${confData.strokeClass} score-arc`}
                   cx="88" cy="88"
                   fill="transparent"
                   r="70"
@@ -287,7 +287,7 @@ export default function ResultSection({ recommendation, onNew, agentResults, dee
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-5xl font-black ${confData.colorClass}`}>{displayScore}</span>
+                <span className={`text-5xl font-black score-value ${confData.colorClass}`}>{displayScore}</span>
                 <span className="text-[10px] font-label-caps text-[#52525B] mt-1 tracking-widest">MATCH %</span>
               </div>
             </div>

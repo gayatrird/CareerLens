@@ -364,11 +364,67 @@ Respond ONLY in this exact JSON format with no extra text:
 
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
-const callGroq = async (systemPrompt, userContent, options = {}, retries = 8) => {
+// ─── GROQ RATE-LIMIT (HTTP 429) HANDLING ────────────────────────────────────
+// Groq throttles with HTTP 429 when a per-minute quota is exhausted. We detect
+// 429 specifically, wait out the reported window (Retry-After header, or the
+// "Please try again in Xs" text Groq puts in the error body), then retry a
+// bounded number of times — never an uncontrolled retry loop. A module-level
+// cooldown makes later calls in the same run (the next agent, the final
+// recommendation) wait for that window to reopen before their FIRST request,
+// instead of each call piling 429s onto the same exhausted quota.
+
+const MAX_ATTEMPTS = 6;        // small, bounded number of attempts per call
+const MAX_BACKOFF_MS = 30000;  // cap for the exponential fallback wait
+const DAILY_LIMIT_MARKERS = ['TPD', 'RPD', 'per day', 'daily'];
+
+let rateLimitCooldownUntil = 0;
+
+// Lightweight pub/sub so the UI can show "AI service is rate limited.
+// Retrying..." while a call backs off instead of looking frozen.
+const rateLimitListeners = new Set();
+export const subscribeRateLimitRetry = (listener) => {
+  rateLimitListeners.add(listener);
+  return () => rateLimitListeners.delete(listener);
+};
+
+const notifyRateLimitRetry = (message) => {
+  rateLimitListeners.forEach(fn => {
+    try { fn(message); } catch { /* listener errors never break the pipeline */ }
+  });
+};
+
+// A daily/billing limit will NOT clear by waiting a few seconds — fail fast so
+// we never burn retries (and never silently swallow the real cause).
+const isDailyLimitError = detail => DAILY_LIMIT_MARKERS.some(m => detail.includes(m));
+
+// How long to wait before the next attempt after a 429. Priority:
+//   1. Retry-After response header (seconds or HTTP-date), per RFC 7231.
+//   2. The retry time Groq reports in the error body ("Please try again in Xs").
+//   3. Bounded exponential backoff (2s, 4s, 8s, ... capped at MAX_BACKOFF_MS).
+const getRateLimitWaitMs = (response, errorDetail, attempt) => {
+  const retryAfter = response?.headers?.get?.('retry-after');
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
+    const asDate = Date.parse(retryAfter);
+    if (Number.isFinite(asDate)) return Math.max(0, asDate - Date.now());
+  }
+  const match = errorDetail.match(/try again in ([0-9.]+)\s*s/i);
+  if (match && match[1]) return Math.ceil(parseFloat(match[1]) * 1000);
+  return Math.min(MAX_BACKOFF_MS, 2000 * Math.pow(2, attempt - 1));
+};
+
+const callGroq = async (systemPrompt, userContent, options = {}) => {
   const apiKey = import.meta.env.VITE_GROQ_API_KEY;
   if (!apiKey) throw new Error('Groq API key is missing. Add VITE_GROQ_API_KEY to your .env file.');
 
-  for (let attempt = 1; attempt <= retries; attempt++) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // If an earlier call in this session was rate limited, wait out the shared
+    // cooldown before firing — keeps sequential agents from each re-triggering
+    // 429s on the same exhausted window.
+    const cooldownLeft = rateLimitCooldownUntil - Date.now();
+    if (cooldownLeft > 0) await delay(cooldownLeft);
+
     let response;
     try {
       response = await fetch(API_URL, {
@@ -391,7 +447,7 @@ const callGroq = async (systemPrompt, userContent, options = {}, retries = 8) =>
       });
     } catch (err) {
       // Transient network-level failure (e.g. dropped connection)
-      if (attempt === retries) throw new Error(`Groq network error: ${err.message}`);
+      if (attempt === MAX_ATTEMPTS) throw new Error(`Groq network error: ${err.message}`);
       await delay(1500 * attempt);
       continue;
     }
@@ -405,13 +461,13 @@ const callGroq = async (systemPrompt, userContent, options = {}, retries = 8) =>
         errorDetail = err.error?.message || errorDetail;
         failedGeneration = err.error?.failed_generation || '';
       } catch (_) {}
-      
+
       // The model occasionally emits non-JSON despite response_format; this is
       // transient, so retry a bounded number of times instead of failing.
       const isJsonValidationError = response.status === 400 &&
         (errorDetail.includes('Failed to validate JSON') || errorDetail.includes('Failed to generate JSON'));
       if (isJsonValidationError) {
-        if (attempt === retries) {
+        if (attempt === MAX_ATTEMPTS) {
           throw new Error(`Groq API Error ${response.status}: ${errorDetail} ${failedGeneration}`);
         }
         await delay(1200 * attempt);
@@ -419,28 +475,33 @@ const callGroq = async (systemPrompt, userContent, options = {}, retries = 8) =>
       }
 
       if (is429) {
-        // If it's a daily limit or billing limit, do not retry
-        const isDailyLimit = errorDetail.includes('TPD') || errorDetail.includes('RPD') || errorDetail.includes('per day') || errorDetail.includes('daily');
-        if (isDailyLimit || attempt === retries) {
-          throw new Error(`RATE_LIMIT_EXCEEDED: Groq rate limit hit. ${errorDetail}`);
+        // Daily/billing limits never clear by waiting — surface immediately.
+        if (isDailyLimitError(errorDetail)) {
+          throw new Error(`RATE_LIMIT_EXCEEDED: Groq quota reached (daily limit). ${errorDetail}`);
         }
-        // It's a temporary minute limit, so wait and retry
-        let waitTime = 2000 * attempt; 
-        const match = errorDetail.match(/Please try again in ([\d.]+)s/);
-        if (match && match[1]) {
-          waitTime = (parseFloat(match[1]) * 1000) + 1000; // Parse seconds from Groq response + 1s buffer
+        // Temporary per-minute limit: wait out the window the server reported
+        // (Retry-After / message body) or fall back to exponential backoff.
+        // A small buffer + jitter avoids hammering the exact boundary.
+        const waitMs = getRateLimitWaitMs(response, errorDetail, attempt);
+        const scheduledWait = waitMs + 300 + Math.random() * 1000;
+        if (attempt === MAX_ATTEMPTS) {
+          // Out of attempts: throw for THIS call, but keep the shared cooldown
+          // armed so the next call in the pipeline waits out the window before
+          // its first request instead of immediately 429-ing again.
+          rateLimitCooldownUntil = Math.max(rateLimitCooldownUntil, Date.now() + scheduledWait);
+          throw new Error(`RATE_LIMIT_EXCEEDED: Groq kept rate limiting after ${MAX_ATTEMPTS} attempts. ${errorDetail}`);
         }
-        // Add random jitter between 500ms and 2500ms to avoid collisions
-        waitTime += 500 + Math.random() * 2000;
-        await delay(waitTime);
+        rateLimitCooldownUntil = Math.max(rateLimitCooldownUntil, Date.now() + scheduledWait);
+        notifyRateLimitRetry(`AI service is rate limited. Retrying in ${Math.max(1, Math.round(scheduledWait / 1000))}s…`);
+        await delay(scheduledWait);
         continue;
       }
-      
-      if (response.status >= 500 && attempt < retries) {
+
+      if (response.status >= 500 && attempt < MAX_ATTEMPTS) {
         await delay(2000 * attempt);
         continue;
       }
-      
+
       throw new Error(`Groq API Error ${response.status}: ${errorDetail}`);
     }
 
