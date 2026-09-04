@@ -1,7 +1,10 @@
 import { companyContexts } from '../config/agents';
 
 const API_URL = '/api/groq/openai/v1/chat/completions';
-const MODEL   = 'llama-3.3-70b-versatile';
+// gpt-oss-120b is used because the account's Groq key no longer has access to
+// llama-3.3-70b-versatile (returns 404). Same Groq client/provider, no change
+// to API_URL, retries, or response_format handling.
+const MODEL   = 'openai/gpt-oss-120b';
 
 
 const cleanText = (text) => {
@@ -14,6 +17,240 @@ const getCompanyContext = (companyMode) => {
 };
 
 // ─── AGENT SYSTEM PROMPTS ──────────────────────────────────────────────────
+
+// ─── STRUCTURED OUTPUT SCHEMAS ──────────────────────────────────────────────
+// The current model (openai/gpt-oss-120b) drifts from the JSON described inside
+// plain prompts when response_format is only `json_object`. Groq's strict
+// `json_schema` output enforces the exact key structure declared in each prompt,
+// so every caller passes its schema. Schemas mirror the JSON the prompts ask for.
+const num0100 = { type: 'number', minimum: 0, maximum: 100 };
+const strArray = { type: 'array', items: { type: 'string' } };
+
+const AGENT_SCHEMAS = {
+  ats: {
+    name: 'ats_result',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        score: num0100,
+        missingKeywords: strArray,
+        presentKeywords: strArray,
+        suggestions: strArray,
+        formattingIssues: { type: 'string' },
+        sectionQuality: { type: 'string' },
+        summary: { type: 'string' },
+      },
+      required: ['score', 'missingKeywords', 'presentKeywords', 'suggestions', 'formattingIssues', 'sectionQuality', 'summary'],
+      additionalProperties: false,
+    },
+  },
+  recruiter: {
+    name: 'recruiter_result',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        score: num0100,
+        strongProjects: strArray,
+        weakProjects: strArray,
+        missingExperience: strArray,
+        techStackAlignment: { type: 'string' },
+        experienceRelevance: { type: 'string' },
+        summary: { type: 'string' },
+      },
+      required: ['score', 'strongProjects', 'weakProjects', 'missingExperience', 'techStackAlignment', 'experienceRelevance', 'summary'],
+      additionalProperties: false,
+    },
+  },
+  engineer: {
+    name: 'engineer_result',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        score: num0100,
+        likelyInterviewQuestions: strArray,
+        weakTechnicalAreas: strArray,
+        strongTechnicalAreas: strArray,
+        architectureObservation: { type: 'string' },
+        summary: { type: 'string' },
+      },
+      required: ['score', 'likelyInterviewQuestions', 'weakTechnicalAreas', 'strongTechnicalAreas', 'architectureObservation', 'summary'],
+      additionalProperties: false,
+    },
+  },
+  manager: {
+    name: 'manager_result',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        decision: { type: 'string', enum: ['HIRE', 'MAYBE', 'REJECT'] },
+        score: num0100,
+        reasons: strArray,
+        communicationClarity: { type: 'string' },
+        achievementStrength: { type: 'string' },
+        summary: { type: 'string' },
+      },
+      required: ['decision', 'score', 'reasons', 'communicationClarity', 'achievementStrength', 'summary'],
+      additionalProperties: false,
+    },
+  },
+  optimizer: {
+    name: 'optimizer_result',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        improvedBullets: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              original: { type: 'string' },
+              improved: { type: 'string' },
+            },
+            required: ['original', 'improved'],
+            additionalProperties: false,
+          },
+        },
+        writingTips: strArray,
+        overallImpactScore: num0100,
+        summary: { type: 'string' },
+      },
+      required: ['improvedBullets', 'writingTips', 'overallImpactScore', 'summary'],
+      additionalProperties: false,
+    },
+  },
+};
+
+const RECOMMENDATION_SCHEMA = {
+  name: 'final_recommendation',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      overallMatch: num0100,
+      recommendation: { type: 'string', enum: ['SHORTLIST', 'MAYBE', 'NOT_ALIGNED'] },
+      actionableTakeaway: { type: 'string' },
+      keyStrengths: strArray,
+      keyWeaknesses: strArray,
+      hiringInsight: { type: 'string' },
+      nextStep: { type: 'string' },
+    },
+    required: ['overallMatch', 'recommendation', 'actionableTakeaway', 'keyStrengths', 'keyWeaknesses', 'hiringInsight', 'nextStep'],
+    additionalProperties: false,
+  },
+};
+
+const INTERVIEW_SCHEMA = {
+  name: 'interview_questions',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      behavioral: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { question: { type: 'string' }, context: { type: 'string' } },
+          required: ['question', 'context'],
+          additionalProperties: false,
+        },
+      },
+      technical: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { question: { type: 'string' }, context: { type: 'string' } },
+          required: ['question', 'context'],
+          additionalProperties: false,
+        },
+      },
+      projectSpecific: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { question: { type: 'string' }, context: { type: 'string' } },
+          required: ['question', 'context'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['behavioral', 'technical', 'projectSpecific'],
+    additionalProperties: false,
+  },
+};
+
+const DEEP_ATS_SCHEMA = {
+  name: 'deep_ats_scan',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      match_score: {
+        type: 'object',
+        properties: { score: num0100, reason: { type: 'string' } },
+        required: ['score', 'reason'],
+        additionalProperties: false,
+      },
+      skills_comparison: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            skill: { type: 'string' },
+            status: { type: 'string', enum: ['yes', 'partial', 'no'] },
+            evidence: { type: 'string' },
+          },
+          required: ['skill', 'status', 'evidence'],
+          additionalProperties: false,
+        },
+      },
+      missing_keywords: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            keyword: { type: 'string' },
+            importance_rank: { type: 'number', minimum: 1, maximum: 5 },
+            why_it_matters: { type: 'string' },
+          },
+          required: ['keyword', 'importance_rank', 'why_it_matters'],
+          additionalProperties: false,
+        },
+      },
+      bullet_rewrites: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            original: { type: 'string' },
+            rewritten: { type: 'string' },
+            what_changed: { type: 'string' },
+          },
+          required: ['original', 'rewritten', 'what_changed'],
+          additionalProperties: false,
+        },
+      },
+      cover_letter: { type: 'string' },
+    },
+    required: ['match_score', 'skills_comparison', 'missing_keywords', 'bullet_rewrites', 'cover_letter'],
+    additionalProperties: false,
+  },
+};
+
+const SCORE_SCHEMA = {
+  name: 'resume_section_score',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: { ats: num0100, technical: num0100, communication: num0100 },
+    required: ['ats', 'technical', 'communication'],
+    additionalProperties: false,
+  },
+};
 
 const getAgentSystemPrompt = (agentId, companyMode) => {
   const companyCtx = getCompanyContext(companyMode);
@@ -132,26 +369,55 @@ const callGroq = async (systemPrompt, userContent, options = {}, retries = 8) =>
   if (!apiKey) throw new Error('Groq API key is missing. Add VITE_GROQ_API_KEY to your .env file.');
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userContent  }
-        ],
-        temperature:     options.temperature ?? 0.3,
-        max_tokens:      options.maxTokens   ?? 1200,
-        response_format: { type: 'json_object' }
-      })
-    });
+    let response;
+    try {
+      response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userContent  }
+          ],
+          temperature:     options.temperature ?? 0.3,
+          max_tokens:      options.maxTokens   ?? 1200,
+          // Strict structured output when a schema is provided — required for
+          // gpt-oss models to respect the exact JSON shape of each agent.
+          response_format: options.schema
+            ? { type: 'json_schema', json_schema: options.schema }
+            : { type: 'json_object' }
+        })
+      });
+    } catch (err) {
+      // Transient network-level failure (e.g. dropped connection)
+      if (attempt === retries) throw new Error(`Groq network error: ${err.message}`);
+      await delay(1500 * attempt);
+      continue;
+    }
 
     if (!response.ok) {
       let errorDetail = response.statusText;
       const is429 = response.status === 429;
-      try { const err = await response.json(); errorDetail = err.error?.message || errorDetail; } catch (_) {}
+      let failedGeneration = '';
+      try {
+        const err = await response.json();
+        errorDetail = err.error?.message || errorDetail;
+        failedGeneration = err.error?.failed_generation || '';
+      } catch (_) {}
       
+      // The model occasionally emits non-JSON despite response_format; this is
+      // transient, so retry a bounded number of times instead of failing.
+      const isJsonValidationError = response.status === 400 &&
+        (errorDetail.includes('Failed to validate JSON') || errorDetail.includes('Failed to generate JSON'));
+      if (isJsonValidationError) {
+        if (attempt === retries) {
+          throw new Error(`Groq API Error ${response.status}: ${errorDetail} ${failedGeneration}`);
+        }
+        await delay(1200 * attempt);
+        continue;
+      }
+
       if (is429) {
         // If it's a daily limit or billing limit, do not retry
         const isDailyLimit = errorDetail.includes('TPD') || errorDetail.includes('RPD') || errorDetail.includes('per day') || errorDetail.includes('daily');
@@ -204,7 +470,8 @@ Analyze this resume against the job description and return your findings in the 
 
   const rawResponse = await callGroq(systemPrompt, userContent, {
     temperature: agentId === 'optimizer' ? 0.5 : 0.25,
-    maxTokens: 600
+    maxTokens: 1000,
+    schema: AGENT_SCHEMAS[agentId]
   });
 
   try {
@@ -216,9 +483,15 @@ Analyze this resume against the job description and return your findings in the 
 };
 
 /**
- * Generate final hiring recommendation from all agent results
+ * Generate final hiring recommendation from all agent results.
+ *
+ * When a computed `jobMatch` report is supplied (produced by computeJobMatch
+ * after the five agents finish), its overallMatch is authoritative: the model
+ * is told to use it and the parsed value is overridden below so the stored
+ * `recommendation.overallMatch` always equals the deterministic jobMatch
+ * overall score.
  */
-export const generateHiringRecommendation = async (resumeText, jobDescription, agentResults, companyMode = 'general') => {
+export const generateHiringRecommendation = async (resumeText, jobDescription, agentResults, companyMode = 'general', jobMatch = null) => {
   const companyCtx = getCompanyContext(companyMode);
   const systemPrompt = getFinalRecommendationPrompt();
 
@@ -236,6 +509,16 @@ Score: ${agentResults.ats?.score ?? 'N/A'}
 Missing Keywords: ${(agentResults.ats?.missingKeywords || []).join(', ')}
 Summary: ${agentResults.ats?.summary ?? ''}
 
+RECRUITER REVIEW:
+Score: ${agentResults.recruiter?.score ?? 'N/A'}
+Missing Experience: ${(agentResults.recruiter?.missingExperience || []).join(', ')}
+Summary: ${agentResults.recruiter?.summary ?? ''}
+
+TECHNICAL DEPTH:
+Score: ${agentResults.engineer?.score ?? 'N/A'}
+Weak Areas: ${(agentResults.engineer?.weakTechnicalAreas || []).join(', ')}
+Summary: ${agentResults.engineer?.summary ?? ''}
+
 HIRING MANAGER DECISION:
 Decision: ${agentResults.manager?.decision ?? 'N/A'}
 Score: ${agentResults.manager?.score ?? 'N/A'}
@@ -245,17 +528,31 @@ RESUME OPTIMIZATION:
 Impact Score: ${agentResults.optimizer?.overallImpactScore ?? 'N/A'}
 Summary: ${agentResults.optimizer?.summary ?? ''}
 
-Synthesize all expert reviews and deliver your final hiring recommendation in the required JSON format.`;
+${jobMatch ? `COMPUTED JOB MATCH (authoritative — derived from the expert scores and the resume/job description):
+Overall Match: ${jobMatch.overallMatch} (ATS ${jobMatch.atsCompatibility} | Skills ${jobMatch.skillsMatch} | Experience ${jobMatch.experienceMatch} | Technical ${jobMatch.technicalMatch})
+Matched Skills: ${(jobMatch.matchedSkills || []).join(', ')}
+Missing Skills: ${(jobMatch.missingSkills || []).join(', ')}
+Weak Skills: ${(jobMatch.weakSkills || []).join(', ')}
+Top Gaps: ${(jobMatch.topGaps || []).map(g => `${g.skill} (${g.importance})`).join(', ')}
+
+RULE: Your "overallMatch" field MUST equal the Computed Overall Match value above (${jobMatch.overallMatch}). Do not invent another number.
+
+` : ''}Synthesize all expert reviews and deliver your final hiring recommendation in the required JSON format.`;
 
   const rawResponse = await callGroq(systemPrompt, userContent, {
     temperature: 0.2,
-    maxTokens: 400
+    maxTokens: 800,
+    schema: RECOMMENDATION_SCHEMA
   });
 
   try {
     const parsed = JSON.parse(rawResponse);
+    // The deterministic jobMatch overall score is authoritative when present.
+    const computedOverall = jobMatch && Number.isFinite(Number(jobMatch.overallMatch))
+      ? Math.max(0, Math.min(100, Math.round(Number(jobMatch.overallMatch))))
+      : null;
     return {
-      overallMatch: Number(parsed.overallMatch || 50),
+      overallMatch: computedOverall ?? Number(parsed.overallMatch || 50),
       recommendation: parsed.recommendation || 'MAYBE',
       actionableTakeaway: cleanText(parsed.actionableTakeaway || ''),
       keyStrengths: Array.isArray(parsed.keyStrengths) ? parsed.keyStrengths.map(cleanText) : [],
@@ -289,7 +586,8 @@ ${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}Generate targeted inter
 
   const rawResponse = await callGroq(systemPrompt, userContent, {
     temperature: 0.4,
-    maxTokens: 700
+    maxTokens: 700,
+    schema: INTERVIEW_SCHEMA
   });
 
   try {
@@ -315,7 +613,8 @@ No other text.`;
   try {
     const rawResponse = await callGroq(systemPrompt, `Score this resume section: "${text.substring(0, 300)}"`, {
       temperature: 0.1,
-      maxTokens: 60
+      maxTokens: 60,
+      schema: SCORE_SCHEMA
     });
     return JSON.parse(rawResponse);
   } catch {
@@ -388,6 +687,7 @@ ${safeJD}`;
   const rawResponse = await callGroq(DEEP_ATS_SYSTEM_PROMPT, userContent, {
     temperature: 0.2,
     maxTokens: 2400,
+    schema: DEEP_ATS_SCHEMA,
   });
 
   try {

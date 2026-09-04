@@ -16,6 +16,7 @@ import DashboardSection from './components/DashboardSection';
 import MatchScoreboard from './components/Scoreboard';
 import SubscriptionSection from './components/SubscriptionSection';
 import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan } from './services/hiringApi';
+import { computeJobMatch } from './services/jobMatch';
 import { initAudio } from './utils/audio';
 import TypewriterText from './components/TypewriterText';
 import { auth, onAuthStateChanged, signInWithPopup, googleProvider } from './services/firebase';
@@ -35,10 +36,14 @@ function BackgroundParticles() {
   );
 }
 
-const AGENT_ORDER = ['ats', 'manager', 'optimizer'];
+// Full CareerLens agent pipeline: ATS → Recruiter → Engineer → Hiring Manager
+// → Optimizer → Final Job Match Report (computed deterministically afterwards).
+const AGENT_ORDER = ['ats', 'recruiter', 'engineer', 'manager', 'optimizer'];
 
 const TRANSITION_LABELS = {
   ats: '🤖 ATS ANALYSIS — SCANNING KEYWORDS',
+  recruiter: '📋 RECRUITER REVIEW — EVALUATING PROJECTS',
+  engineer: '⚙️ TECHNICAL REVIEW — ANALYZING DEPTH',
   manager: '🎯 HIRING MANAGER — MAKING DECISION',
   optimizer: '✨ RESUME OPTIMIZER — IMPROVING CONTENT',
 };
@@ -159,6 +164,10 @@ export default function App() {
   const runAnalysisEngine = async (resumeText, jobDescription, companyMode) => {
     let accumulatedResults = {};
     let completedAgents = [];
+    // Records per-agent failures (reported, never silently swallowed). A failed
+    // agent does not stop the pipeline: successful agents are preserved and the
+    // final match report degrades deterministically (see services/jobMatch.js).
+    const agentErrors = {};
 
     for (const agentId of AGENT_ORDER) {
       await delay(50);
@@ -170,9 +179,14 @@ export default function App() {
         completedAgents,
       }));
 
-      // Call the agent API
-      const result = await analyzeWithAgent(agentId, resumeText, jobDescription, companyMode);
-      accumulatedResults = { ...accumulatedResults, [agentId]: result };
+      try {
+        // Call the agent API
+        const result = await analyzeWithAgent(agentId, resumeText, jobDescription, companyMode);
+        accumulatedResults = { ...accumulatedResults, [agentId]: result };
+      } catch (err) {
+        console.error(`Agent "${agentId}" failed:`, err);
+        agentErrors[agentId] = (err && err.message) || 'Agent analysis failed';
+      }
       completedAgents = [...completedAgents, agentId];
 
       // Update state with result. We keep activeAgent null briefly to let the UI settle.
@@ -188,13 +202,26 @@ export default function App() {
       await delay(1200);
     }
 
+    // ── Final Job Match Report (deterministic, no extra API call) ──────────
+    let jobMatch = null;
+    try {
+      jobMatch = computeJobMatch({
+        resumeText,
+        jobDescription,
+        agentResults: accumulatedResults,
+      });
+    } catch (err) {
+      console.error('Failed to compute job match report:', err);
+    }
+
     setAnalysisState(prev => ({ ...prev, activeAgent: 'recommendation' }));
 
     const recommendation = await generateHiringRecommendation(
       resumeText,
       jobDescription,
       accumulatedResults,
-      companyMode
+      companyMode,
+      jobMatch
     );
     
     // Deep ATS scan is now optional and triggered manually to save tokens.
@@ -208,6 +235,8 @@ export default function App() {
       jobDescription,
       companyMode,
       agentResults: accumulatedResults,
+      jobMatch,
+      agentErrors,
       recommendation,
       deepScanResult,
       status: 'complete',
