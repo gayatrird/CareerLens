@@ -14,6 +14,7 @@ import HistorySection from './components/ArchivesSection';
 import InterviewSection from './components/EvidenceSection';
 import SettingsSection from './components/ChambersSection';
 import DashboardSection from './components/DashboardSection';
+import CareerNavigatorSection from './components/CareerNavigatorSection';
 import MatchScoreboard from './components/Scoreboard';
 import SubscriptionSection from './components/SubscriptionSection';
 import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan, subscribeRateLimitRetry } from './services/hiringApi';
@@ -467,6 +468,7 @@ export default function App() {
         )}
 
         {activeTab === 'DASHBOARD' && <DashboardSection onNavigateToAnalyze={() => setActiveTab('DOCKET')} />}
+        {activeTab === 'NAVIGATOR' && <CareerNavigatorSection onNavigateToAnalyze={() => setActiveTab('DOCKET')} />}
         {activeTab === 'ARCHIVES' && <HistorySection />}
         {activeTab === 'EVIDENCE' && <InterviewSection />}
 

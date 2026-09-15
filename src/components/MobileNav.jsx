@@ -2,11 +2,11 @@ import React from 'react';
 
 export default function MobileNav({ activeTab, setActiveTab }) {
   const navItems = [
-    { tab: 'DASHBOARD', icon: 'grid_view',     label: 'Home',    fill: true },
-    { tab: 'DOCKET',   icon: 'work',          label: 'Analyze',  fill: true },
-    { tab: 'ARCHIVES', icon: 'history',        label: 'History',  fill: false },
-    { tab: 'EVIDENCE', icon: 'quiz',           label: 'Interview', fill: false },
-    { tab: 'CHAMBERS', icon: 'settings',       label: 'Settings', fill: false },
+    { tab: 'DASHBOARD', icon: 'grid_view',  label: 'Home',      fill: true },
+    { tab: 'DOCKET',    icon: 'work',        label: 'Analyze',   fill: true },
+    { tab: 'NAVIGATOR', icon: 'explore',     label: 'Navigator', fill: true },
+    { tab: 'ARCHIVES',  icon: 'history',     label: 'History',   fill: false },
+    { tab: 'EVIDENCE',  icon: 'quiz',        label: 'Interview', fill: false },
   ];
 
   return (

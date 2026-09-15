@@ -437,7 +437,7 @@ const callGroq = async (systemPrompt, userContent, options = {}) => {
             { role: 'user',   content: userContent  }
           ],
           temperature:     options.temperature ?? 0.3,
-          max_tokens:      options.maxTokens   ?? 1200,
+          max_completion_tokens: options.maxCompletionTokens || options.maxTokens || 1200,
           // Strict structured output when a schema is provided — required for
           // gpt-oss models to respect the exact JSON shape of each agent.
           response_format: options.schema
@@ -462,16 +462,10 @@ const callGroq = async (systemPrompt, userContent, options = {}) => {
         failedGeneration = err.error?.failed_generation || '';
       } catch (_) {}
 
-      // The model occasionally emits non-JSON despite response_format; this is
-      // transient, so retry a bounded number of times instead of failing.
-      const isJsonValidationError = response.status === 400 &&
-        (errorDetail.includes('Failed to validate JSON') || errorDetail.includes('Failed to generate JSON'));
-      if (isJsonValidationError) {
-        if (attempt === MAX_ATTEMPTS) {
-          throw new Error(`Groq API Error ${response.status}: ${errorDetail} ${failedGeneration}`);
-        }
-        await delay(1200 * attempt);
-        continue;
+      // Do NOT retry HTTP 400 errors repeatedly (schema validation failure, truncation, bad request).
+      // These are deterministic for the given payload/tokens; fail fast without burning retries.
+      if (response.status === 400) {
+        throw new Error(`Groq API Error 400: ${errorDetail}${failedGeneration ? ` (${failedGeneration.slice(0, 150)})` : ''}`);
       }
 
       if (is429) {
@@ -756,5 +750,174 @@ ${safeJD}`;
   } catch (e) {
     console.error('Failed to parse Deep ATS Scan response:', e, rawResponse);
     throw new Error('Failed to parse Deep ATS Scan results. Please try again.');
+  }
+};
+
+// ─── CAREER NAVIGATOR ────────────────────────────────────────────────────────
+
+const CAREER_NAVIGATOR_SCHEMA = {
+  name: 'career_navigator',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      careerSummary: { type: 'string' },
+      topCareerPaths: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            fitScore: { type: 'number', minimum: 0, maximum: 100 },
+            whyFit: { type: 'string' },
+            currentStrengths: { type: 'array', items: { type: 'string' } },
+            skillGaps: { type: 'array', items: { type: 'string' } },
+            entryLevelReality: { type: 'string' },
+          },
+          required: ['title', 'fitScore', 'whyFit', 'currentStrengths', 'skillGaps', 'entryLevelReality'],
+          additionalProperties: false,
+        },
+      },
+      transferableSkills: { type: 'array', items: { type: 'string' } },
+      prioritySkillGaps: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            skill: { type: 'string' },
+            priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+            reason: { type: 'string' },
+          },
+          required: ['skill', 'priority', 'reason'],
+          additionalProperties: false,
+        },
+      },
+      roadmap: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            phase: { type: 'string' },
+            timeframe: { type: 'string' },
+            actions: { type: 'array', items: { type: 'string' } },
+            outcome: { type: 'string' },
+          },
+          required: ['phase', 'timeframe', 'actions', 'outcome'],
+          additionalProperties: false,
+        },
+      },
+      nextBestAction: { type: 'string' },
+    },
+    required: ['careerSummary', 'topCareerPaths', 'transferableSkills', 'prioritySkillGaps', 'roadmap', 'nextBestAction'],
+    additionalProperties: false,
+  },
+};
+
+const CAREER_NAVIGATOR_SYSTEM_PROMPT = `You are an expert career strategist and professional coach. Analyze the candidate's resume and prior analysis data to generate a realistic, high-impact, concise career navigation plan.
+
+CONCISENESS RULES & OUTPUT CONSTRAINTS:
+1. Base all recommendations strictly on evidence in the resume and analysis data provided. Do not invent skills or credentials.
+2. Keep ALL descriptions concise and punchy (1-2 sentences maximum per field). Avoid filler words, preamble, or essay-length text.
+3. careerSummary: Exactly 2 concise sentences summarizing the candidate's current professional identity, core strengths, and immediate growth trajectory.
+4. topCareerPaths: Exactly 3 best-fit career paths (no more, no less). For each path:
+   - title: Clear, recognized role title
+   - fitScore: Realistic 0-100 alignment score (above 80 means strong existing alignment)
+   - whyFit: 1 concise sentence explaining the alignment
+   - currentStrengths: Exactly 2-3 concise skill/experience bullet strings
+   - skillGaps: Exactly 2-3 concise missing requirement strings
+   - entryLevelReality: 1 concise sentence on entry requirements or transition path
+5. transferableSkills: Exactly 4-6 concise skill strings from their background.
+6. prioritySkillGaps: Exactly 3-4 items. For each item:
+   - skill: Specific skill or knowledge area
+   - priority: 'high', 'medium', or 'low'
+   - reason: 1 concise sentence explaining why this gap matters
+7. roadmap: Exactly 4 sequential phases (Phase 1 through Phase 4). For each phase:
+   - phase: Phase name (e.g. "Phase 1: Foundation & Skill Audit")
+   - timeframe: Realistic timeframe (e.g. "Weeks 1-4" or "Months 1-2")
+   - actions: Exactly 2 concrete, actionable steps
+   - outcome: 1 concise sentence describing the milestone achieved
+8. nextBestAction: Exactly 1 single, immediate, punchy actionable sentence (not a generic platitude).
+
+Respond ONLY in the required JSON format with no extra text.`;
+
+/**
+ * Generate a Career Navigator report from resume text and optional analysis context.
+ * Single AI call, strictly structured JSON. Does NOT re-run the 5-agent pipeline.
+ *
+ * @param {string} resumeText - Extracted text of the candidate's resume
+ * @param {Object} [context] - Optional enrichment from existing analysis
+ * @param {Object} [context.agentResults] - { ats, recruiter, engineer, manager, optimizer }
+ * @param {Object} [context.recommendation] - Final recommendation object
+ * @param {Object} [context.jobMatch] - Deterministic job match scores
+ * @param {string} [context.jobDescription] - Job description used in the latest analysis
+ * @returns {Promise<Object>} Parsed CareerNavigator result matching CAREER_NAVIGATOR_SCHEMA
+ */
+export const generateCareerNavigator = async (resumeText, context = {}) => {
+  const safeResume = (resumeText || '').substring(0, 1600);
+  if (!safeResume || safeResume.trim().length < 20) {
+    throw new Error('Resume text is too short to generate a career navigation report.');
+  }
+
+  const { agentResults = {}, recommendation = null, jobMatch = null, jobDescription = '' } = context;
+
+  // Build a compact, token-efficient context block from existing analysis data.
+  // We only include concise indicators to leave maximal token budget for generation.
+  const contextLines = [];
+
+  if (agentResults.ats) {
+    contextLines.push(`ATS Score: ${agentResults.ats.score ?? 'N/A'}`);
+    if ((agentResults.ats.missingKeywords || []).length > 0)
+      contextLines.push(`Missing Keywords: ${agentResults.ats.missingKeywords.slice(0, 4).join(', ')}`);
+  }
+
+  if (agentResults.recruiter) {
+    contextLines.push(`Recruiter Score: ${agentResults.recruiter.score ?? 'N/A'}`);
+    if ((agentResults.recruiter.strongProjects || []).length > 0)
+      contextLines.push(`Strong Projects: ${agentResults.recruiter.strongProjects.slice(0, 2).join(', ')}`);
+    if ((agentResults.recruiter.missingExperience || []).length > 0)
+      contextLines.push(`Missing Exp: ${agentResults.recruiter.missingExperience.slice(0, 2).join(', ')}`);
+  }
+
+  if (agentResults.engineer) {
+    contextLines.push(`Tech Score: ${agentResults.engineer.score ?? 'N/A'}`);
+    if ((agentResults.engineer.strongTechnicalAreas || []).length > 0)
+      contextLines.push(`Strong Tech: ${agentResults.engineer.strongTechnicalAreas.slice(0, 2).join(', ')}`);
+    if ((agentResults.engineer.weakTechnicalAreas || []).length > 0)
+      contextLines.push(`Weak Tech: ${agentResults.engineer.weakTechnicalAreas.slice(0, 2).join(', ')}`);
+  }
+
+  if (agentResults.manager) {
+    contextLines.push(`Manager Decision: ${agentResults.manager.decision ?? 'N/A'}`);
+  }
+
+  if (recommendation) {
+    contextLines.push(`Overall Match: ${recommendation.overallMatch ?? 'N/A'}%`);
+  }
+
+  if (jobMatch) {
+    contextLines.push(`Skills Match: ${jobMatch.skillsMatch ?? 'N/A'}% | Tech Match: ${jobMatch.technicalMatch ?? 'N/A'}%`);
+  }
+
+  if (jobDescription) {
+    contextLines.push(`Target Role Context: ${jobDescription.substring(0, 150)}`);
+  }
+
+  const contextBlock = contextLines.length > 0
+    ? `\nANALYSIS CONTEXT:\n${contextLines.join('\n')}\n`
+    : '';
+
+  const userContent = `RESUME:\n${safeResume}${contextBlock}\n\nGenerate a concise, personalized career navigation report grounded in the candidate's profile.`;
+
+  const rawResponse = await callGroq(CAREER_NAVIGATOR_SYSTEM_PROMPT, userContent, {
+    temperature: 0.3,
+    maxCompletionTokens: 2800,
+    schema: CAREER_NAVIGATOR_SCHEMA,
+  });
+
+  try {
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    console.error('Failed to parse Career Navigator response:', e, rawResponse);
+    throw new Error('Failed to parse Career Navigator results. Please try again.');
   }
 };
