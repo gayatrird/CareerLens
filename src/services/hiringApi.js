@@ -252,6 +252,73 @@ const SCORE_SCHEMA = {
   },
 };
 
+const MOCK_INTERVIEW_START_SCHEMA = {
+  name: 'mock_interview_start',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      question: { type: 'string' },
+      category: { type: 'string', enum: ['TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT_DEEP_DIVE'] },
+      interviewerNote: { type: 'string' },
+    },
+    required: ['question', 'category', 'interviewerNote'],
+    additionalProperties: false,
+  },
+};
+
+const MOCK_INTERVIEW_TURN_SCHEMA = {
+  name: 'mock_interview_turn',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      score: { type: 'number', minimum: 0, maximum: 100 },
+      conciseFeedback: { type: 'string' },
+      idealAnswerPoints: { type: 'array', items: { type: 'string' } },
+      isFinished: { type: 'boolean' },
+      nextQuestion: { type: 'string' },
+      nextCategory: { type: 'string', enum: ['TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT_DEEP_DIVE', 'NONE'] },
+      nextInterviewerNote: { type: 'string' },
+    },
+    required: ['score', 'conciseFeedback', 'idealAnswerPoints', 'isFinished', 'nextQuestion', 'nextCategory', 'nextInterviewerNote'],
+    additionalProperties: false,
+  },
+};
+
+const MOCK_INTERVIEW_REPORT_SCHEMA = {
+  name: 'mock_interview_report',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {
+      overallScore: { type: 'number', minimum: 0, maximum: 100 },
+      technicalKnowledge: { type: 'number', minimum: 0, maximum: 100 },
+      problemSolving: { type: 'number', minimum: 0, maximum: 100 },
+      communication: { type: 'number', minimum: 0, maximum: 100 },
+      answerQuality: { type: 'number', minimum: 0, maximum: 100 },
+      verdict: { type: 'string', enum: ['Strong Hire', 'Hire', 'Lean Hire', 'Lean No', 'No Hire'] },
+      strengths: { type: 'array', items: { type: 'string' } },
+      areasToImprove: { type: 'array', items: { type: 'string' } },
+      interviewFeedback: { type: 'string' },
+      suggestedNextPractice: { type: 'array', items: { type: 'string' } },
+    },
+    required: [
+      'overallScore',
+      'technicalKnowledge',
+      'problemSolving',
+      'communication',
+      'answerQuality',
+      'verdict',
+      'strengths',
+      'areasToImprove',
+      'interviewFeedback',
+      'suggestedNextPractice',
+    ],
+    additionalProperties: false,
+  },
+};
+
 const getAgentSystemPrompt = (agentId, companyMode) => {
   const companyCtx = getCompanyContext(companyMode);
   const companyNote = companyCtx ? `\n\nCOMPANY-SPECIFIC CONTEXT: ${companyCtx}` : '';
@@ -921,3 +988,182 @@ export const generateCareerNavigator = async (resumeText, context = {}) => {
     throw new Error('Failed to parse Career Navigator results. Please try again.');
   }
 };
+
+/**
+ * Start an interactive AI Mock Interview session.
+ * Generates Question 1 tailored to the candidate's resume and target role.
+ */
+export const startMockInterview = async (resumeText, roleTitle, companyName = 'General', mode = 'mixed') => {
+  const safeResume = (resumeText || '').substring(0, 1600);
+  const targetRole = (roleTitle || 'Software Engineer').trim();
+  const targetCompany = (companyName || 'General').trim();
+  const interviewMode = (mode || 'mixed').toLowerCase();
+
+  const systemPrompt = `You are a Principal Technical Interviewer and Hiring Committee Member conducting an elite, realistic mock interview for the position of "${targetRole}" at "${targetCompany}".
+Interview Mode: ${interviewMode.toUpperCase()}.
+Your goal is to evaluate the candidate thoroughly with realistic, grounded questions.
+
+Respond ONLY with valid JSON matching the schema.`;
+
+  const userContent = `CANDIDATE RESUME:
+${safeResume || 'General software development background.'}
+
+ROLE: ${targetRole}
+COMPANY: ${targetCompany}
+INTERVIEW FOCUS: ${interviewMode.toUpperCase()}
+
+TASK:
+Generate Question 1 to start this mock interview:
+- If TECHNICAL: Pose an architectural or technical problem-solving question tailored to their skills and the target role.
+- If BEHAVIORAL: Pose a STAR-method behavioral question about a challenging project, deadline, or conflict.
+- If MIXED: Pose a strong opening technical or project-specific question exploring their past engineering work.
+Provide a concise "interviewerNote" outlining the key competency being tested.`;
+
+  const rawResponse = await callGroq(systemPrompt, userContent, {
+    temperature: 0.35,
+    maxCompletionTokens: 800,
+    schema: MOCK_INTERVIEW_START_SCHEMA,
+  });
+
+  try {
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    console.error('Failed to parse mock interview start response:', e, rawResponse);
+    throw new Error('Failed to start mock interview. Please try again.');
+  }
+};
+
+/**
+ * Evaluates the candidate's answer for the current question AND generates the next question
+ * in a SINGLE token-efficient API call.
+ */
+export const submitMockInterviewTurn = async ({
+  resumeText = '',
+  roleTitle = 'Software Engineer',
+  companyName = 'General',
+  mode = 'mixed',
+  currentQuestionIndex = 1,
+  totalQuestions = 3,
+  currentQuestion = '',
+  currentCategory = 'TECHNICAL',
+  userAnswer = '',
+}) => {
+  const safeResume = (resumeText || '').substring(0, 1200);
+  const safeAnswer = (userAnswer || '').trim().substring(0, 2500);
+  const isFinalTurn = currentQuestionIndex >= totalQuestions;
+
+  const systemPrompt = `You are a Principal Technical Interviewer evaluating a live mock interview for "${roleTitle}" at "${companyName}".
+Interview Mode: ${mode.toUpperCase()}.
+You must simultaneously evaluate the candidate's answer AND determine the next step in the interview.
+
+Respond ONLY with valid JSON matching the schema.`;
+
+  const userContent = `CANDIDATE RESUME SUMMARY:
+${safeResume.substring(0, 500)}
+
+ROLE: ${roleTitle} | COMPANY: ${companyName} | MODE: ${mode}
+CURRENT QUESTION (${currentQuestionIndex} of ${totalQuestions}):
+Category: ${currentCategory}
+Question: "${currentQuestion}"
+
+CANDIDATE'S SUBMITTED ANSWER:
+"${safeAnswer || '[No answer provided]'}"
+
+INSTRUCTIONS:
+1. EVALUATION:
+   - score: A fair score (0-100) based on accuracy, structure, engineering depth, and clarity. Be realistic (e.g., shallow answers should score 40-60, strong structured answers 75-90).
+   - conciseFeedback: 2-3 sentences of direct, actionable feedback. Point out specifically what was strong and what critical points were omitted.
+   - idealAnswerPoints: 2-3 bullet points of what a top-tier staff candidate would touch upon.
+2. NEXT QUESTION:
+   ${isFinalTurn ? `
+   - Since this is question ${currentQuestionIndex} of ${totalQuestions}, the interview is now complete.
+   - Set isFinished = true
+   - Set nextQuestion = "Interview complete."
+   - Set nextCategory = "NONE"
+   - Set nextInterviewerNote = "All questions completed."` : `
+   - Set isFinished = false
+   - Formulate Question ${currentQuestionIndex + 1} of ${totalQuestions}.
+   - Choose category (TECHNICAL, BEHAVIORAL, SYSTEM_DESIGN, or PROJECT_DEEP_DIVE).
+   - Keep it fresh and relevant to the candidate's profile and "${roleTitle}".
+   - Provide a brief nextInterviewerNote.`}`;
+
+  const rawResponse = await callGroq(systemPrompt, userContent, {
+    temperature: 0.35,
+    maxCompletionTokens: 1200,
+    schema: MOCK_INTERVIEW_TURN_SCHEMA,
+  });
+
+  try {
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    console.error('Failed to parse mock interview turn response:', e, rawResponse);
+    throw new Error('Failed to evaluate answer. Please try again.');
+  }
+};
+
+/**
+ * Generate a comprehensive final report and scorecard from completed mock interview turns.
+ * Single API call summarizing the whole session.
+ */
+export const generateMockInterviewFinalReport = async (sessionData) => {
+  const {
+    resumeText = '',
+    roleTitle = 'Software Engineer',
+    companyName = 'General',
+    mode = 'mixed',
+    turns = [],
+  } = sessionData;
+
+  const safeResume = (resumeText || '').substring(0, 1000);
+
+  const transcript = turns.map((t, i) => `
+ROUND ${i + 1} [${t.category}]:
+Question: ${t.question}
+Candidate Answer: ${t.userAnswer || 'N/A'}
+Score: ${t.score}/100
+Turn Feedback: ${t.conciseFeedback}
+Ideal Key Points: ${(t.idealAnswerPoints || []).join('; ')}
+`).join('\n---\n');
+
+  const systemPrompt = `You are the Lead Hiring Committee Director reviewing an end-of-round Mock Interview report for "${roleTitle}" at "${companyName}".
+Synthesize the overall performance into a detailed, rigorous final evaluation.
+
+Respond ONLY with valid JSON matching the schema.`;
+
+  const userContent = `CANDIDATE RESUME:
+${safeResume}
+
+ROLE: ${roleTitle}
+COMPANY: ${companyName}
+INTERVIEW MODE: ${mode}
+
+COMPLETE INTERVIEW SESSION TRANSCRIPT:
+${transcript}
+
+TASK:
+Produce the comprehensive final scorecard:
+- overallScore: Weighted average composite score (0-100).
+- technicalKnowledge: Score (0-100) reflecting technical depth, precision, and tool proficiency.
+- problemSolving: Score (0-100) reflecting analytical structure, edge cases, and reasoning.
+- communication: Score (0-100) reflecting articulation, structure, and brevity.
+- answerQuality: Score (0-100) reflecting completeness and relevance to the question.
+- verdict: One of ['Strong Hire', 'Hire', 'Lean Hire', 'Lean No', 'No Hire'].
+- strengths: 3-4 specific strengths demonstrated across the answers.
+- areasToImprove: 3-4 concrete weaknesses or omissions to correct.
+- interviewFeedback: A thorough, constructive 2-3 paragraph summary of candidate readiness.
+- suggestedNextPractice: 3-4 concrete topics or concepts to drill next.`;
+
+  const rawResponse = await callGroq(systemPrompt, userContent, {
+    temperature: 0.25,
+    maxCompletionTokens: 1800,
+    schema: MOCK_INTERVIEW_REPORT_SCHEMA,
+  });
+
+  try {
+    return JSON.parse(rawResponse);
+  } catch (e) {
+    console.error('Failed to parse final interview report:', e, rawResponse);
+    throw new Error('Failed to generate interview final report. Please try again.');
+  }
+};
+

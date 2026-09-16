@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { generateInterviewQuestions } from '../services/hiringApi';
+import MockInterviewSection from './MockInterviewSection';
 
 export default function InterviewSection() {
+  const [activeSubTab, setActiveSubTab] = useState('MOCK'); // 'MOCK' | 'KIT'
   const [archives, setArchives] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [loadingId, setLoadingId] = useState(null);
@@ -50,45 +52,46 @@ export default function InterviewSection() {
     }
   };
 
-  if (archives.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in-up px-4">
-        <div className="w-20 h-20 rounded-2xl bg-[#171A20] border border-[#2D2F36] flex items-center justify-center mb-6">
-          <span className="material-symbols-outlined text-5xl text-[#3F3F46]" style={{ fontVariationSettings: "'FILL' 1" }}>quiz</span>
-        </div>
-        <h2 className="font-headline-md text-xl text-[#FAFAFA] mb-2">Interview Prep</h2>
-        <p className="text-[#71717A] text-sm max-w-sm leading-relaxed mb-8">
-          Run a resume analysis first in the <strong className="text-[#5B8CFF] font-semibold">Analyze</strong> tab to generate tailored interview questions based on your resume and target job description.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl w-full">
-          {[
-            { icon: 'psychology',    label: 'Behavioral',      color: '#8b5cf6', desc: 'STAR-method questions from your experience' },
-            { icon: 'code',          label: 'Technical',       color: '#3b82f6', desc: 'Tech stack & problem-solving deep dives' },
-            { icon: 'folder_open',   label: 'Project-Specific', color: '#22C55E', desc: 'Questions about your actual projects' },
-          ].map(({ icon, label, color, desc }) => (
-            <div key={label} className="bg-[#171A20] border border-[#2D2F36] rounded-xl p-4 text-left">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="material-symbols-outlined text-[18px]" style={{ color, fontVariationSettings: "'FILL' 1" }}>{icon}</span>
-                <p className="font-label-caps text-[10px] tracking-widest" style={{ color }}>{label}</p>
+  const renderQuestionKit = () => {
+    if (archives.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[50vh] text-center animate-fade-in-up px-4">
+          <div className="w-20 h-20 rounded-2xl bg-[#171A20] border border-[#2D2F36] flex items-center justify-center mb-6">
+            <span className="material-symbols-outlined text-5xl text-[#3F3F46]" style={{ fontVariationSettings: "'FILL' 1" }}>quiz</span>
+          </div>
+          <h2 className="font-headline-md text-xl text-[#FAFAFA] mb-2">Interview Question Kit</h2>
+          <p className="text-[#71717A] text-sm max-w-sm leading-relaxed mb-8">
+            Run a resume analysis first in the <strong className="text-[#5B8CFF] font-semibold">Analyze</strong> tab to generate tailored interview questions based on your resume and target job description.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl w-full">
+            {[
+              { icon: 'psychology',    label: 'Behavioral',      color: '#8b5cf6', desc: 'STAR-method questions from your experience' },
+              { icon: 'code',          label: 'Technical',       color: '#3b82f6', desc: 'Tech stack & problem-solving deep dives' },
+              { icon: 'folder_open',   label: 'Project-Specific', color: '#22C55E', desc: 'Questions about your actual projects' },
+            ].map(({ icon, label, color, desc }) => (
+              <div key={label} className="bg-[#171A20] border border-[#2D2F36] rounded-xl p-4 text-left">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="material-symbols-outlined text-[18px]" style={{ color, fontVariationSettings: "'FILL' 1" }}>{icon}</span>
+                  <p className="font-label-caps text-[10px] tracking-widest" style={{ color }}>{label}</p>
+                </div>
+                <p className="text-[12px] text-[#52525B] leading-relaxed">{desc}</p>
               </div>
-              <p className="text-[12px] text-[#52525B] leading-relaxed">{desc}</p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  return (
-    <div className="animate-fade-in-up max-w-5xl mx-auto">
-      <div className="flex items-center gap-2.5 mb-6">
-        <div className="w-7 h-7 rounded-lg bg-[#5B8CFF]/15 border border-[#5B8CFF]/25 flex items-center justify-center">
-          <span className="material-symbols-outlined text-[#5B8CFF] text-[14px]">quiz</span>
-        </div>
-        <h2 className="font-semibold text-[#FAFAFA] text-base tracking-tight">Interview Prep History</h2>
-      </div>
-
+    return (
       <div className="space-y-4">
+        <div className="flex items-center gap-2.5 mb-6">
+          <div className="w-7 h-7 rounded-lg bg-[#5B8CFF]/15 border border-[#5B8CFF]/25 flex items-center justify-center">
+            <span className="material-symbols-outlined text-[#5B8CFF] text-[14px]">quiz</span>
+          </div>
+          <h2 className="font-semibold text-[#FAFAFA] text-base tracking-tight">Interview Prep History</h2>
+        </div>
+
+        <div className="space-y-4">
         {archives.map((item) => {
           const isExpanded = expandedId === item.id;
           const isLoading = loadingId === item.id;
@@ -182,6 +185,46 @@ export default function InterviewSection() {
           );
         })}
       </div>
+    </div>
+    );
+  };
+
+  return (
+    <div className="animate-fade-in-up max-w-5xl mx-auto pb-16">
+      {/* Top Mode Toggle */}
+      <div className="flex items-center gap-2 mb-8 p-1 bg-[#111318] rounded-xl border border-[#27272A] w-fit">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('MOCK')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold tracking-wider transition-all cursor-pointer ${
+            activeSubTab === 'MOCK'
+              ? 'bg-[#4F7DF3] text-white shadow-[0_2px_10px_rgba(79,125,243,0.3)]'
+              : 'text-[#A1A1AA] hover:text-[#FAFAFA]'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">record_voice_over</span>
+          <span>Live Mock Interview</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('KIT')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold tracking-wider transition-all cursor-pointer ${
+            activeSubTab === 'KIT'
+              ? 'bg-[#4F7DF3] text-white shadow-[0_2px_10px_rgba(79,125,243,0.3)]'
+              : 'text-[#A1A1AA] hover:text-[#FAFAFA]'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[16px]">quiz</span>
+          <span>Question Kit</span>
+        </button>
+      </div>
+
+      {activeSubTab === 'MOCK' ? (
+        <MockInterviewSection onViewKit={() => setActiveSubTab('KIT')} />
+      ) : (
+        renderQuestionKit()
+      )}
     </div>
   );
 }
