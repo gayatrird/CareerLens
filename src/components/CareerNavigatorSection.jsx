@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect, useCallback } from "react";
-import { loadSavedResumes, markResumeUsed } from "../services/savedResume";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { loadSavedResumes, markResumeUsed, saveResume, removeSavedResume, parseResumeFile, MAX_RESUMES } from "../services/savedResume";
 import { generateCareerNavigator } from "../services/hiringApi";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ function FitRing({ score }) {
 }
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
-function EmptyState({ onNavigateToAnalyze }) {
+function EmptyState({ onNavigateToAnalyze, onUploadClick, isUploading, uploadError }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-fade-in-up px-4">
       <div className="w-20 h-20 rounded-2xl bg-[#171A20] border border-[#2D2F36] flex items-center justify-center mb-6">
@@ -82,16 +82,43 @@ function EmptyState({ onNavigateToAnalyze }) {
         </span>
       </div>
       <h2 className="font-headline-md text-xl text-[#FAFAFA] mb-2">No Resume Found Yet</h2>
-      <p className="text-[#71717A] text-sm max-w-sm leading-relaxed mb-8">
-        Analyze a resume first or select a saved resume to build your personalized career roadmap.
+      <p className="text-[#71717A] text-sm max-w-sm leading-relaxed mb-6">
+        Upload your resume directly or analyze one first to build your personalized career roadmap.
       </p>
-      <button
-        onClick={onNavigateToAnalyze}
-        className="flex items-center gap-2 bg-[#4F7DF3] hover:bg-[#4069D0] text-white font-label-caps px-5 py-2.5 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-95 text-xs tracking-wider"
-      >
-        <span className="material-symbols-outlined text-sm">work</span>
-        Go to Analyze
-      </button>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
+          type="button"
+          onClick={onUploadClick}
+          disabled={isUploading}
+          className="flex items-center gap-2 bg-[#4F7DF3] hover:bg-[#4069D0] disabled:opacity-50 disabled:cursor-not-allowed text-white font-label-caps px-5 py-2.5 rounded-xl transition-all duration-200 hover:scale-[1.02] active:scale-95 text-xs tracking-wider cursor-pointer shadow-[0_4px_16px_rgba(79,125,243,0.3)]"
+        >
+          {isUploading ? (
+            <>
+              <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+              <span>Processing...</span>
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-sm">upload_file</span>
+              <span>Upload New Resume</span>
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onNavigateToAnalyze}
+          className="flex items-center gap-2 bg-[#171A20] hover:bg-[#27272A] border border-[#2D2F36] text-[#A1A1AA] hover:text-[#FAFAFA] font-label-caps px-5 py-2.5 rounded-xl transition-all duration-200 text-xs tracking-wider"
+        >
+          <span className="material-symbols-outlined text-sm">work</span>
+          Go to Analyze
+        </button>
+      </div>
+      {uploadError && (
+        <div className="mt-3 text-xs text-red-400 flex items-center gap-1.5 justify-center animate-fade-in-up">
+          <span className="material-symbols-outlined text-sm">error</span>
+          <span>{uploadError}</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl w-full mt-10">
         {[
           { icon: "route",     label: "Career Paths",       color: "#4F7DF3", desc: "Discover your best-fit directions" },
@@ -112,11 +139,22 @@ function EmptyState({ onNavigateToAnalyze }) {
 }
 
 // ─── Resume Selector ──────────────────────────────────────────────────────────
-function ResumeSelector({ savedResumes, selectedResume, onSelect }) {
-  if (savedResumes.length === 0) return null;
+function ResumeSelector({
+  savedResumes,
+  selectedResume,
+  onSelect,
+  onDelete,
+  onUploadClick,
+  isUploading,
+  uploadError,
+  uploadNotice,
+}) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  if (!savedResumes || savedResumes.length === 0) return null;
 
   function lastUsedLabel(ts) {
-    if (!ts) return "";
+    if (!ts) return "Today";
     const then = new Date(ts);
     const now = new Date();
     const days = Math.round(
@@ -128,42 +166,171 @@ function ResumeSelector({ savedResumes, selectedResume, onSelect }) {
     return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
+  const activeResume =
+    (selectedResume && savedResumes.find((r) => r.name === selectedResume.name)) ||
+    savedResumes[0];
+
+  const otherResumes = savedResumes.filter((r) => r.name !== activeResume.name);
+
   return (
-    <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-5 md:p-6 mb-6 animate-fade-in-up">
-      <div className="flex items-center gap-2.5 mb-4">
-        <div className="w-7 h-7 rounded-lg bg-[#4F7DF3]/15 border border-[#4F7DF3]/25 flex items-center justify-center">
-          <span className="material-symbols-outlined text-[#4F7DF3] text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>description</span>
-        </div>
-        <div>
-          <h3 className="font-semibold text-[#FAFAFA] text-sm tracking-tight">Resume in use</h3>
-          <p className="text-[11px] text-[#71717A]">Switch to analyze a different resume</p>
-        </div>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {savedResumes.map((resume) => {
-          const isActive = selectedResume && resume.name === selectedResume.name;
-          return (
-            <button
-              key={resume.name}
-              onClick={() => onSelect(resume)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all duration-200 text-xs ${
-                isActive
-                  ? "bg-[#4F7DF3]/15 border-[#4F7DF3]/40 text-[#4F7DF3]"
-                  : "bg-[#09090B] border-[#27272A] text-[#A1A1AA] hover:border-[#4F7DF3]/30 hover:text-[#FAFAFA]"
-              }`}
+    <div className="flex flex-col gap-2 mb-6 animate-fade-in-up">
+      <label className="font-label-caps text-[#A1A1AA] tracking-widest text-[10px]">RESUME</label>
+
+      {/* Saved resumes — compact selector: last used shown, others in a dropdown */}
+      <div className="rounded-xl border border-[#27272A] bg-[#111318] overflow-hidden">
+        {/* Current (selected / last used) resume */}
+        <div className="px-3.5 py-2.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="material-symbols-outlined text-[#22C55E] text-[15px] shrink-0"
+              style={{ fontVariationSettings: "'FILL' 1" }}
             >
-              <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>description</span>
-              <div className="text-left">
-                <span className="block font-medium truncate max-w-[140px]">{resume.name}</span>
-                {resume.lastUsedAt && (
-                  <span className="block text-[10px] opacity-60">{lastUsedLabel(resume.lastUsedAt)}</span>
-                )}
-              </div>
-              {isActive && <span className="material-symbols-outlined text-[12px] ml-1">check</span>}
+              check_circle
+            </span>
+            <p
+              className="text-[12px] font-medium text-[#FAFAFA] truncate flex-1 min-w-0"
+              title={activeResume.name}
+            >
+              {activeResume.name}
+            </p>
+            {(dropdownOpen || savedResumes.length === 1) && onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(activeResume.name)}
+                disabled={isUploading}
+                className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5"
+                title="Remove saved resume"
+                aria-label={`Remove ${activeResume.name}`}
+              >
+                <span className="material-symbols-outlined text-[15px]">delete</span>
+              </button>
+            )}
+            {savedResumes.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setDropdownOpen((v) => !v)}
+                disabled={isUploading}
+                className="text-[#71717A] hover:text-[#FAFAFA] transition-colors shrink-0 p-0.5"
+                title={dropdownOpen ? "Hide other saved resumes" : "Show other saved resumes"}
+                aria-label={dropdownOpen ? "Hide other saved resumes" : "Show other saved resumes"}
+              >
+                <span
+                  className={`material-symbols-outlined text-[16px] transition-transform duration-200 ${
+                    dropdownOpen ? "rotate-180" : ""
+                  }`}
+                >
+                  expand_more
+                </span>
+              </button>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-3 mt-1.5">
+            <p className="text-[10px] text-[#52525B] truncate">
+              Last used • {lastUsedLabel(activeResume.lastUsedAt)}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                onSelect(activeResume);
+                setDropdownOpen(false);
+              }}
+              disabled={isUploading}
+              className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide bg-[#4F7DF3] text-white hover:bg-[#436FE3] transition-all duration-200 disabled:opacity-50 shrink-0"
+            >
+              Use
             </button>
-          );
-        })}
+          </div>
+        </div>
+
+        {/* Other saved resumes (hidden until the arrow is clicked) */}
+        {dropdownOpen && otherResumes.length > 0 && (
+          <div className="border-t border-[#27272A]">
+            {otherResumes.map((r) => (
+              <div
+                key={r.name}
+                className="flex items-center gap-2 px-3.5 py-2 border-b border-[#27272A]/70 last:border-b-0 hover:bg-[#09090B]/60 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[#3F3F46] text-[14px] shrink-0">
+                  radio_button_unchecked
+                </span>
+                <p className="text-[12px] text-[#A1A1AA] truncate flex-1 min-w-0" title={r.name}>
+                  {r.name}
+                </p>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(r.name)}
+                    disabled={isUploading}
+                    className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5"
+                    title="Remove saved resume"
+                    aria-label={`Remove ${r.name}`}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">delete</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelect(r);
+                    setDropdownOpen(false);
+                  }}
+                  disabled={isUploading}
+                  className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide border border-[#27272A] bg-[#09090B] text-[#A1A1AA] hover:text-[#FAFAFA] hover:border-[#3F3F46] transition-all duration-200 disabled:opacity-50 shrink-0"
+                >
+                  Use
+                </button>
+              </div>
+            ))}
+            <div className="px-3.5 py-2 border-t border-[#27272A] flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#4F7DF3] text-[14px] shrink-0">add</span>
+              <button
+                type="button"
+                onClick={onUploadClick}
+                disabled={isUploading}
+                className="text-[11px] font-medium text-[#4F7DF3] hover:text-[#5B8CFF] transition-colors cursor-pointer"
+              >
+                Upload New Resume
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Direct Upload button & notices below the selector */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+        <button
+          type="button"
+          onClick={onUploadClick}
+          disabled={isUploading}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-[#4F7DF3] hover:text-[#5B8CFF] transition-colors py-1 cursor-pointer disabled:opacity-50"
+        >
+          {isUploading ? (
+            <>
+              <span className="material-symbols-outlined text-[15px] animate-spin text-[#4F7DF3]">
+                progress_activity
+              </span>
+              <span>Processing resume...</span>
+            </>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-[15px]">add</span>
+              <span>Upload New Resume</span>
+            </>
+          )}
+        </button>
+        {uploadNotice && (
+          <span className="text-[11px] text-amber-400 font-medium animate-fade-in-up">
+            {uploadNotice}
+          </span>
+        )}
+      </div>
+
+      {uploadError && (
+        <div className="text-xs text-red-400 flex items-center gap-1.5 animate-fade-in-up">
+          <span className="material-symbols-outlined text-sm">error</span>
+          <span>{uploadError}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -282,6 +449,132 @@ function RoadmapPhase({ phase, index, isLast }) {
   );
 }
 
+// ─── Generation Progress Animation ────────────────────────────────────────────
+const GENERATION_STAGES = [
+  "Reading your resume",
+  "Identifying your strengths",
+  "Finding best-fit career paths",
+  "Mapping your skill gaps",
+  "Building your career roadmap",
+  "Preparing your next best action",
+];
+
+function NavigatorGenerationProgress({ isDone }) {
+  const [currentStage, setCurrentStage] = useState(0);
+
+  useEffect(() => {
+    if (isDone) {
+      setCurrentStage(GENERATION_STAGES.length);
+      return;
+    }
+
+    // Step through the stages naturally while the single AI request runs.
+    // The final stage stays active until the real request completes.
+    const t1 = setTimeout(() => setCurrentStage(1), 750);
+    const t2 = setTimeout(() => setCurrentStage(2), 1600);
+    const t3 = setTimeout(() => setCurrentStage(3), 2550);
+    const t4 = setTimeout(() => setCurrentStage(4), 3500);
+    const t5 = setTimeout(() => setCurrentStage(5), 4500);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+      clearTimeout(t5);
+    };
+  }, [isDone]);
+
+  const total = GENERATION_STAGES.length;
+  const progressPercent = isDone
+    ? 100
+    : Math.min(94, Math.round(((currentStage + 0.6) / total) * 100));
+
+  return (
+    <div className="bg-[#171A20] border border-[#2D2F36] rounded-2xl p-6 sm:p-8 mb-6 max-w-md mx-auto animate-fade-in-up text-center shadow-lg transition-all">
+      {/* Sparkle Icon */}
+      <div className="w-10 h-10 rounded-xl bg-[#4F7DF3]/15 border border-[#4F7DF3]/25 flex items-center justify-center mx-auto mb-3">
+        <span
+          className="material-symbols-outlined text-[#4F7DF3] text-xl"
+          style={{ fontVariationSettings: "'FILL' 1" }}
+        >
+          auto_awesome
+        </span>
+      </div>
+
+      {/* Header */}
+      <span className="font-label-caps text-[#4F7DF3] text-[10px] tracking-[0.2em] uppercase font-bold block mb-1">
+        AI CAREER NAVIGATOR
+      </span>
+      <h2 className="text-[#FAFAFA] font-headline-md text-base sm:text-lg font-bold tracking-tight">
+        {isDone ? "Roadmap generated!" : "Building your career roadmap..."}
+      </h2>
+
+      {/* Sequential Stages List */}
+      <div className="max-w-xs mx-auto space-y-3.5 my-6 text-left">
+        {GENERATION_STAGES.map((label, idx) => {
+          const isCompleted = isDone || idx < currentStage;
+          const isActive = !isDone && idx === currentStage;
+
+          return (
+            <div
+              key={label}
+              className="flex items-center gap-3 transition-all duration-300"
+            >
+              {/* Stage Icon */}
+              <div
+                className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all duration-300 ${
+                  isCompleted
+                    ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                    : isActive
+                    ? "bg-[#4F7DF3]/20 border border-[#4F7DF3]/60 text-[#4F7DF3]"
+                    : "border border-[#3F3F46] bg-[#09090B]/40 text-transparent"
+                }`}
+              >
+                {isCompleted ? (
+                  <span className="material-symbols-outlined text-[13px] font-bold">
+                    check
+                  </span>
+                ) : isActive ? (
+                  <span className="w-2 h-2 rounded-full bg-[#4F7DF3] animate-pulse" />
+                ) : (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#3F3F46]" />
+                )}
+              </div>
+
+              {/* Stage Label */}
+              <span
+                className={`text-[13px] tracking-wide transition-colors duration-300 ${
+                  isCompleted
+                    ? "text-[#A1A1AA] font-medium"
+                    : isActive
+                    ? "text-[#FAFAFA] font-semibold"
+                    : "text-[#52525B]"
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Progress Bar */}
+      <div className="h-1.5 w-full bg-[#27272A] rounded-full overflow-hidden border border-[#2D2F36]/40 mb-3">
+        <div
+          className="h-full bg-[#4F7DF3] transition-all duration-300 ease-out rounded-full"
+          style={{ width: `${progressPercent}%` }}
+        />
+      </div>
+
+      {/* Status indicator text */}
+      <p className="text-[11px] font-label-caps text-[#71717A] tracking-wider uppercase">
+        {isDone ? "Revealing results..." : "Analyzing..."}
+      </p>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
   const [savedResumes, setSavedResumes] = useState([]);
@@ -290,7 +583,13 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [result, setResult] = useState(null);
   const [status, setStatus] = useState("idle");
+  const [isDone, setIsDone] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  const fileInputRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploadNotice, setUploadNotice] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -331,15 +630,95 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
     setSelectedResume(resume);
     setResult(null);
     setErrorMsg("");
+    setUploadError("");
+    setUploadNotice("");
     setStatus("idle");
+    setIsDone(false);
     const cached = readCache(resume.text);
     if (cached) setResult(cached);
+    setSavedResumes((prev) => [
+      { ...resume, lastUsedAt: Date.now() },
+      ...prev.filter((r) => r.name !== resume.name),
+    ].slice(0, MAX_RESUMES));
     markResumeUsed(resume.name).catch(() => {});
+  }, []);
+
+  const handleDeleteResume = useCallback(async (name) => {
+    try {
+      await removeSavedResume(name);
+      const updatedList = await loadSavedResumes().catch(() => []);
+      const validList = Array.isArray(updatedList) ? updatedList : [];
+      setSavedResumes(validList);
+      if (selectedResume?.name === name) {
+        if (validList.length > 0) {
+          setSelectedResume(validList[0]);
+          const cached = readCache(validList[0].text);
+          setResult(cached || null);
+        } else {
+          setSelectedResume(null);
+          setResult(null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to remove saved resume:", err);
+    }
+  }, [selectedResume]);
+
+  const handleUploadClick = useCallback(() => {
+    setUploadError("");
+    setUploadNotice("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }, []);
+
+  const handleFileUpload = useCallback(async (e) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadError("");
+    setUploadNotice("");
+
+    try {
+      // 1. Extract text using shared parser
+      const record = await parseResumeFile(file);
+
+      // 2. Check maximum limit of 5 saved resumes
+      const currentSaved = await loadSavedResumes();
+      const isExisting = currentSaved.some((r) => r.name === record.name);
+      if (!isExisting && currentSaved.length >= MAX_RESUMES) {
+        setUploadNotice(`Storage limit reached (${MAX_RESUMES} max). Oldest resume was replaced.`);
+      }
+
+      // 3. Save to IndexedDB
+      await saveResume(record);
+
+      // 4. Reload updated list
+      const updatedList = await loadSavedResumes();
+      setSavedResumes(updatedList);
+
+      // 5. Automatically make newly uploaded resume active & selected
+      setSelectedResume(record);
+
+      // 6. Reset or check cache for this newly uploaded resume
+      const cached = readCache(record.text);
+      setResult(cached);
+      setStatus("idle");
+      setErrorMsg("");
+    } catch (err) {
+      console.error("Resume upload failed:", err);
+      setUploadError(err?.message || "Failed to process resume file. Please check the file format.");
+    } finally {
+      setIsUploading(false);
+    }
   }, []);
 
   const handleGenerate = useCallback(async () => {
     if (!selectedResume?.text) return;
     setStatus("loading");
+    setIsDone(false);
     setErrorMsg("");
     try {
       const context = {};
@@ -350,10 +729,14 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
         if (latestAnalysis.jobDescription) context.jobDescription = latestAnalysis.jobDescription;
       }
       const data = await generateCareerNavigator(selectedResume.text, context);
+      setIsDone(true);
+      await new Promise((res) => setTimeout(res, 350));
       setResult(data);
       writeCache(selectedResume.text, data);
       setStatus("idle");
+      setIsDone(false);
     } catch (err) {
+      setIsDone(false);
       console.error("Career Navigator generation failed:", err);
       const msg = err?.message || "An unknown error occurred.";
       const isRateLimit = msg.includes("429") || msg.includes("RATE_LIMIT_EXCEEDED");
@@ -368,6 +751,7 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
 
   const hasResume = Boolean(
     savedResumes.length > 0 ||
+    selectedResume?.text ||
     (latestAnalysis?.resumeText && latestAnalysis.resumeText.trim().length > 20)
   );
 
@@ -380,11 +764,34 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
   }
 
   if (!hasResume) {
-    return <EmptyState onNavigateToAnalyze={onNavigateToAnalyze} />;
+    return (
+      <>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.doc,.txt"
+          onChange={handleFileUpload}
+          className="hidden"
+        />
+        <EmptyState
+          onNavigateToAnalyze={onNavigateToAnalyze}
+          onUploadClick={handleUploadClick}
+          isUploading={isUploading}
+          uploadError={uploadError}
+        />
+      </>
+    );
   }
 
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto pb-16">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pdf,.docx,.doc,.txt"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
 
       {/* Page Header */}
       <div className="text-center mb-8">
@@ -394,7 +801,16 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
       </div>
 
       {/* Resume Selector */}
-      <ResumeSelector savedResumes={savedResumes} selectedResume={selectedResume} onSelect={handleSelectResume} />
+      <ResumeSelector
+        savedResumes={savedResumes}
+        selectedResume={selectedResume}
+        onSelect={handleSelectResume}
+        onDelete={handleDeleteResume}
+        onUploadClick={handleUploadClick}
+        isUploading={isUploading}
+        uploadError={uploadError}
+        uploadNotice={uploadNotice}
+      />
 
       {/* Generate CTA */}
       {!result && status !== "loading" && (
@@ -418,15 +834,9 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
         </div>
       )}
 
-      {/* Loading */}
+      {/* Generation Animation */}
       {status === "loading" && (
-        <div className="bg-[#171A20] border border-[#4F7DF3]/30 rounded-2xl p-8 mb-6 flex flex-col items-center gap-4 animate-fade-in-up">
-          <span className="material-symbols-outlined animate-spin text-[#4F7DF3] text-4xl">progress_activity</span>
-          <div className="text-center">
-            <p className="text-[#FAFAFA] font-semibold text-sm">Building your career roadmap…</p>
-            <p className="text-[#71717A] text-xs mt-1">Analyzing your resume and crafting personalized paths</p>
-          </div>
-        </div>
+        <NavigatorGenerationProgress isDone={isDone} />
       )}
 
       {/* Error */}

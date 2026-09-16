@@ -1,3 +1,8 @@
+import * as pdfjsLib from 'pdfjs-dist';
+import mammoth from 'mammoth';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
 // CareerLens — Saved Resume persistence (browser-local via IndexedDB).
 //
 // Stores up to MAX_RESUMES recently used resumes so the user does not have to
@@ -28,7 +33,7 @@ const DB_VERSION = 1;
 const STORE_NAME = 'saved_resume';
 const LIST_KEY = 'saved';
 const LEGACY_KEY = 'current'; // single-resume entry written by earlier builds
-const MAX_RESUMES = 5;
+export const MAX_RESUMES = 5;
 
 const isSupported = () => typeof indexedDB !== 'undefined';
 
@@ -197,3 +202,76 @@ export async function removeSavedResume(name) {
     return false;
   }
 }
+
+/**
+ * Extract text from a PDF ArrayBuffer using pdfjsLib.
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {Promise<string>}
+ */
+export async function extractTextFromPDF(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map((item) => item.str).join(' ');
+    fullText += pageText + '\n';
+  }
+  return fullText;
+}
+
+/**
+ * Extract text from a DOCX ArrayBuffer using mammoth.
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {Promise<string>}
+ */
+export async function extractTextFromDocx(arrayBuffer) {
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return result.value;
+}
+
+/**
+ * Parse an uploaded resume File (.pdf, .docx, .doc, .txt) and extract cleaned text.
+ * @param {File} file
+ * @returns {Promise<{name: string, type: string, size: number, lastModified: number, text: string, file: File}>}
+ */
+export async function parseResumeFile(file) {
+  if (!file) throw new Error('No file selected.');
+  if (!file.name.match(/\.(txt|pdf|docx|doc)$/i)) {
+    throw new Error('Unsupported format. Please upload a .pdf, .docx, or .txt file.');
+  }
+
+  const arrayBuffer = await file.arrayBuffer();
+  let text = '';
+
+  if (file.name.toLowerCase().endsWith('.pdf')) {
+    text = await extractTextFromPDF(arrayBuffer);
+  } else if (file.name.toLowerCase().match(/\.docx?$/)) {
+    text = await extractTextFromDocx(arrayBuffer);
+  } else {
+    // Plain text
+    text = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => reject(new Error('Failed to read text file.'));
+      reader.readAsText(file);
+    });
+  }
+
+  const cleaned = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ').replace(/\s{3,}/g, '\n').trim();
+  const resumeSource = cleaned || text;
+
+  if (!resumeSource || resumeSource.trim().length < 20) {
+    throw new Error('Extracted text is empty or too short to be a valid resume.');
+  }
+
+  return {
+    name: file.name,
+    type: file.type || 'application/octet-stream',
+    size: file.size || 0,
+    lastModified: file.lastModified || Date.now(),
+    text: resumeSource,
+    file,
+  };
+}
+
