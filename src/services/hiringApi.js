@@ -259,7 +259,17 @@ const MOCK_INTERVIEW_START_SCHEMA = {
     type: 'object',
     properties: {
       question: { type: 'string' },
-      category: { type: 'string', enum: ['TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT_DEEP_DIVE'] },
+      category: {
+        type: 'string',
+        enum: [
+          'TECHNICAL',
+          'BEHAVIORAL',
+          'PROBLEM_SOLVING',
+          'ROLE_SPECIFIC',
+          'PROJECT_DEEP_DIVE',
+          'SYSTEM_DESIGN',
+        ],
+      },
       interviewerNote: { type: 'string' },
     },
     required: ['question', 'category', 'interviewerNote'],
@@ -278,10 +288,29 @@ const MOCK_INTERVIEW_TURN_SCHEMA = {
       idealAnswerPoints: { type: 'array', items: { type: 'string' } },
       isFinished: { type: 'boolean' },
       nextQuestion: { type: 'string' },
-      nextCategory: { type: 'string', enum: ['TECHNICAL', 'BEHAVIORAL', 'SYSTEM_DESIGN', 'PROJECT_DEEP_DIVE', 'NONE'] },
+      nextCategory: {
+        type: 'string',
+        enum: [
+          'TECHNICAL',
+          'BEHAVIORAL',
+          'PROBLEM_SOLVING',
+          'ROLE_SPECIFIC',
+          'PROJECT_DEEP_DIVE',
+          'SYSTEM_DESIGN',
+          'NONE',
+        ],
+      },
       nextInterviewerNote: { type: 'string' },
     },
-    required: ['score', 'conciseFeedback', 'idealAnswerPoints', 'isFinished', 'nextQuestion', 'nextCategory', 'nextInterviewerNote'],
+    required: [
+      'score',
+      'conciseFeedback',
+      'idealAnswerPoints',
+      'isFinished',
+      'nextQuestion',
+      'nextCategory',
+      'nextInterviewerNote',
+    ],
     additionalProperties: false,
   },
 };
@@ -991,17 +1020,24 @@ export const generateCareerNavigator = async (resumeText, context = {}) => {
 
 /**
  * Start an interactive AI Mock Interview session.
- * Generates Question 1 tailored to the candidate's resume and target role.
+ * Generates Question 1 tailored to the candidate's resume, target role, and focus mode.
  */
-export const startMockInterview = async (resumeText, roleTitle, companyName = 'General', mode = 'mixed') => {
+export const startMockInterview = async (
+  resumeText,
+  roleTitle,
+  companyName = 'General',
+  mode = 'mixed',
+  totalQuestions = 5,
+  jobContext = ''
+) => {
   const safeResume = (resumeText || '').substring(0, 1600);
   const targetRole = (roleTitle || 'Software Engineer').trim();
   const targetCompany = (companyName || 'General').trim();
   const interviewMode = (mode || 'mixed').toLowerCase();
 
-  const systemPrompt = `You are a Principal Technical Interviewer and Hiring Committee Member conducting an elite, realistic mock interview for the position of "${targetRole}" at "${targetCompany}".
-Interview Mode: ${interviewMode.toUpperCase()}.
-Your goal is to evaluate the candidate thoroughly with realistic, grounded questions.
+  const systemPrompt = `You are a Principal Technical Interviewer and Hiring Committee Member conducting an elite, realistic mock interview for "${targetRole}" at "${targetCompany}".
+Interview Mode: ${interviewMode.toUpperCase()}. Total Questions: ${totalQuestions}.
+Your goal is to evaluate the candidate thoroughly across key competencies with realistic, grounded questions.
 
 Respond ONLY with valid JSON matching the schema.`;
 
@@ -1011,12 +1047,27 @@ ${safeResume || 'General software development background.'}
 ROLE: ${targetRole}
 COMPANY: ${targetCompany}
 INTERVIEW FOCUS: ${interviewMode.toUpperCase()}
-
+TOTAL QUESTIONS IN SESSION: ${totalQuestions}
+${jobContext ? `ADDITIONAL JOB CONTEXT / SKILLS:\n${jobContext}\n` : ''}
 TASK:
-Generate Question 1 to start this mock interview:
-- If TECHNICAL: Pose an architectural or technical problem-solving question tailored to their skills and the target role.
-- If BEHAVIORAL: Pose a STAR-method behavioral question about a challenging project, deadline, or conflict.
-- If MIXED: Pose a strong opening technical or project-specific question exploring their past engineering work.
+Generate Question 1 (1 of ${totalQuestions}) to start this mock interview:
+- If TECHNICAL: Pose an architectural or technical knowledge question tailored to "${targetRole}" (need not be restricted only to technologies explicitly mentioned in the resume). Set category to TECHNICAL.
+- If BEHAVIORAL: Pose a STAR-method behavioral question about communication, teamwork, deadline management, leadership, or handling conflict. Set category to BEHAVIORAL.
+- If MIXED:
+  The overall interview will cover multiple distinct competency areas across the session:
+  1. Technical Knowledge (TECHNICAL)
+  2. Role-Specific / Job Scenarios (ROLE_SPECIFIC)
+  3. Problem Solving / Systems (PROBLEM_SOLVING)
+  4. Behavioral / STAR (BEHAVIORAL)
+  5. Resume / Project Deep Dive (PROJECT_DEEP_DIVE)
+  * IMPORTANT: Project questions must NOT dominate the interview.
+  * For Question 1, generate a strong, engaging opening question from ONE of:
+    - TECHNICAL (core technical principles or architecture for ${targetRole})
+    - ROLE_SPECIFIC (practical domain practices, workflows, or role expectations for ${targetRole})
+    - PROBLEM_SOLVING (analytical scenario, system design, or debugging challenge)
+    - PROJECT_DEEP_DIVE (probing a specific key project or achievement grounded in the candidate's resume)
+  * Set the "category" accurately to match the question generated.
+
 Provide a concise "interviewerNote" outlining the key competency being tested.`;
 
   const rawResponse = await callGroq(systemPrompt, userContent, {
@@ -1035,7 +1086,7 @@ Provide a concise "interviewerNote" outlining the key competency being tested.`;
 
 /**
  * Evaluates the candidate's answer for the current question AND generates the next question
- * in a SINGLE token-efficient API call.
+ * in a SINGLE token-efficient API call with balanced multi-competency coverage.
  */
 export const submitMockInterviewTurn = async ({
   resumeText = '',
@@ -1047,21 +1098,49 @@ export const submitMockInterviewTurn = async ({
   currentQuestion = '',
   currentCategory = 'TECHNICAL',
   userAnswer = '',
+  previousTurns = [],
+  jobContext = '',
 }) => {
   const safeResume = (resumeText || '').substring(0, 1200);
   const safeAnswer = (userAnswer || '').trim().substring(0, 2500);
   const isFinalTurn = currentQuestionIndex >= totalQuestions;
 
+  // Track all questions asked in this interview so far
+  const completedPriorList = (previousTurns || []).map((t, idx) => ({
+    num: t.questionNumber || (idx + 1),
+    category: t.category || 'TECHNICAL',
+    question: t.question,
+    score: t.score ?? 'N/A',
+    feedback: t.conciseFeedback || '',
+  }));
+
+  const allQuestionsSoFar = [
+    ...completedPriorList.map((t) => `Q${t.num} [${t.category}]: "${t.question}" (Score: ${t.score}/100)`),
+    `Q${currentQuestionIndex} [${currentCategory}]: "${currentQuestion}" (Current question being evaluated)`,
+  ].join('\n');
+
+  const categoriesCovered = [
+    ...completedPriorList.map((t) => t.category),
+    currentCategory,
+  ];
+  const projectCount = categoriesCovered.filter((c) => c === 'PROJECT_DEEP_DIVE').length;
+
   const systemPrompt = `You are a Principal Technical Interviewer evaluating a live mock interview for "${roleTitle}" at "${companyName}".
-Interview Mode: ${mode.toUpperCase()}.
-You must simultaneously evaluate the candidate's answer AND determine the next step in the interview.
+Interview Mode: ${mode.toUpperCase()}. Question ${currentQuestionIndex} of ${totalQuestions}.
+You must simultaneously evaluate the candidate's answer AND determine the next question in the interview.
 
 Respond ONLY with valid JSON matching the schema.`;
 
   const userContent = `CANDIDATE RESUME SUMMARY:
-${safeResume.substring(0, 500)}
+${safeResume.substring(0, 700)}
 
 ROLE: ${roleTitle} | COMPANY: ${companyName} | MODE: ${mode}
+${jobContext ? `JOB CONTEXT / SKILLS: ${jobContext}\n` : ''}
+QUESTIONS ASKED IN THIS SESSION SO FAR:
+${allQuestionsSoFar}
+
+CATEGORIES COVERED SO FAR: [${categoriesCovered.join(', ')}]
+
 CURRENT QUESTION (${currentQuestionIndex} of ${totalQuestions}):
 Category: ${currentCategory}
 Question: "${currentQuestion}"
@@ -1071,21 +1150,41 @@ CANDIDATE'S SUBMITTED ANSWER:
 
 INSTRUCTIONS:
 1. EVALUATION:
-   - score: A fair score (0-100) based on accuracy, structure, engineering depth, and clarity. Be realistic (e.g., shallow answers should score 40-60, strong structured answers 75-90).
+   - score: A fair score (0-100) based on accuracy, structure, engineering depth, and clarity. Be realistic (shallow answers: 40-60, solid structured answers: 75-90).
    - conciseFeedback: 2-3 sentences of direct, actionable feedback. Point out specifically what was strong and what critical points were omitted.
-   - idealAnswerPoints: 2-3 bullet points of what a top-tier staff candidate would touch upon.
+   - idealAnswerPoints: 2-3 bullet points of what a top-tier candidate would touch upon.
 2. NEXT QUESTION:
    ${isFinalTurn ? `
-   - Since this is question ${currentQuestionIndex} of ${totalQuestions}, the interview is now complete.
+   - Since this was question ${currentQuestionIndex} of ${totalQuestions}, the interview is now complete.
    - Set isFinished = true
    - Set nextQuestion = "Interview complete."
    - Set nextCategory = "NONE"
    - Set nextInterviewerNote = "All questions completed."` : `
    - Set isFinished = false
    - Formulate Question ${currentQuestionIndex + 1} of ${totalQuestions}.
-   - Choose category (TECHNICAL, BEHAVIORAL, SYSTEM_DESIGN, or PROJECT_DEEP_DIVE).
-   - Keep it fresh and relevant to the candidate's profile and "${roleTitle}".
-   - Provide a brief nextInterviewerNote.`}`;
+   - CATEGORY BALANCE RULES:
+     ${mode === 'mixed' ? `
+     * MIXED MODE MUST BE BALANCED across competencies:
+       1. PROJECT_DEEP_DIVE: Resume/project deep-dive (must be grounded in candidate's actual resume projects).
+       2. TECHNICAL: Technical knowledge & engineering concepts for "${roleTitle}" (need not be limited to technologies explicitly on their resume).
+       3. PROBLEM_SOLVING: Problem-solving, scenario-based challenge, debugging, or system design.
+       4. BEHAVIORAL: Behavioral / STAR question (teamwork, conflict, leadership, adaptability, learning).
+       5. ROLE_SPECIFIC: Role-specific / job-related real-world situations, domain practices, and trade-offs.
+     * CRITICAL RULES FOR MIXED MODE:
+       - PROJECT_DEEP_DIVE MUST NOT DOMINATE. Limit project deep-dive questions to at most 1 across the interview (max 2 for 8+ questions).
+       ${projectCount >= 1 ? '- A project deep dive question has ALREADY been asked in this session. You MUST select a different category (TECHNICAL, PROBLEM_SOLVING, BEHAVIORAL, or ROLE_SPECIFIC) for Question ' + (currentQuestionIndex + 1) + '.' : ''}
+       - For 3-question interviews: prefer 3 distinct categories.
+       - For 5-question interviews: aim for 1 Technical, 1 Behavioral, 1 Problem-Solving, 1 Role-Specific, 1 Project Deep-Dive.
+       - For 8-question interviews: ensure broad coverage across all 5 competency areas.
+       - Choose a category from the 5 areas that has NOT yet been covered: [${categoriesCovered.join(', ')}].
+     * DYNAMIC ADAPTATION:
+       - Adapt dynamically to the candidate's answer above. If they struggled or excelled, adjust difficulty or probe logically, but ensure overall category diversity across the session.
+     * Set "nextCategory" to the exact category of Question ${currentQuestionIndex + 1} (one of: TECHNICAL, BEHAVIORAL, PROBLEM_SOLVING, ROLE_SPECIFIC, PROJECT_DEEP_DIVE, SYSTEM_DESIGN).` :
+     mode === 'technical' ? `
+     * TECHNICAL MODE: Focus on technical/engineering knowledge, architectural concepts, or problem-solving relevant to "${roleTitle}". Questions should test technical depth appropriate for the role and do not have to be limited to technologies listed on the resume. Categories: TECHNICAL, PROBLEM_SOLVING, or SYSTEM_DESIGN.` : `
+     * BEHAVIORAL MODE: Focus on workplace behavior, communication, teamwork, adaptability, leadership, conflict resolution, and learning (STAR-style scenarios). Category: BEHAVIORAL.`}
+   - Ensure "nextCategory" accurately matches the category of Question ${currentQuestionIndex + 1}.
+   - Provide a concise nextInterviewerNote outlining the key competency being tested.`}`;
 
   const rawResponse = await callGroq(systemPrompt, userContent, {
     temperature: 0.35,

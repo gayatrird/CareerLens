@@ -59,8 +59,15 @@ function ResumeSelector({
 
       {/* Saved resumes — compact selector: last used shown, others in a dropdown */}
       <div className="rounded-xl border border-[#27272A] bg-[#111318] overflow-hidden">
-        {/* Current (selected / last used) resume */}
-        <div className="px-3.5 py-2.5">
+        {/* Current (selected / last used) resume — entire row is clickable */}
+        <div
+          className="px-3.5 py-2.5 cursor-pointer hover:bg-[#4F7DF3]/5 transition-colors"
+          onClick={() => {
+            if (!disabled && !isUploading) {
+              onSelect(activeResume);
+            }
+          }}
+        >
           <div className="flex items-center gap-2 min-w-0">
             <span
               className="material-symbols-outlined text-[#22C55E] text-[15px] shrink-0"
@@ -77,7 +84,10 @@ function ResumeSelector({
             {(dropdownOpen || savedResumes.length === 1) && onDelete && (
               <button
                 type="button"
-                onClick={() => onDelete(activeResume.name)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(activeResume.name);
+                }}
                 disabled={disabled || isUploading}
                 className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5"
                 title="Remove saved resume"
@@ -89,7 +99,10 @@ function ResumeSelector({
             {savedResumes.length > 1 && (
               <button
                 type="button"
-                onClick={() => setDropdownOpen((v) => !v)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDropdownOpen((v) => !v);
+                }}
                 disabled={disabled || isUploading}
                 className="text-[#71717A] hover:text-[#FAFAFA] transition-colors shrink-0 p-0.5 cursor-pointer"
                 title={dropdownOpen ? 'Hide other saved resumes' : 'Show other saved resumes'}
@@ -105,31 +118,26 @@ function ResumeSelector({
               </button>
             )}
           </div>
-          <div className="flex items-center justify-between gap-3 mt-1.5">
+          <div className="flex items-center gap-3 mt-1.5">
             <p className="text-[10px] text-[#52525B] truncate">
               Last used • {lastUsedLabel(activeResume.lastUsedAt)}
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                onSelect(activeResume);
-                setDropdownOpen(false);
-              }}
-              disabled={disabled || isUploading}
-              className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide bg-[#4F7DF3] text-white hover:bg-[#436FE3] transition-all duration-200 disabled:opacity-50 shrink-0 cursor-pointer"
-            >
-              Use
-            </button>
           </div>
         </div>
 
-        {/* Other saved resumes */}
+        {/* Other saved resumes — each row is fully clickable to select */}
         {dropdownOpen && otherResumes.length > 0 && (
           <div className="border-t border-[#27272A]">
             {otherResumes.map((r) => (
               <div
                 key={r.name}
-                className="flex items-center gap-2 px-3.5 py-2 border-b border-[#27272A]/70 last:border-b-0 hover:bg-[#09090B]/60 transition-colors"
+                className="flex items-center gap-2 px-3.5 py-2 border-b border-[#27272A]/70 last:border-b-0 hover:bg-[#4F7DF3]/5 transition-colors cursor-pointer"
+                onClick={() => {
+                  if (!disabled && !isUploading) {
+                    onSelect(r);
+                    setDropdownOpen(false);
+                  }
+                }}
               >
                 <span className="material-symbols-outlined text-[#3F3F46] text-[14px] shrink-0">
                   radio_button_unchecked
@@ -140,7 +148,10 @@ function ResumeSelector({
                 {onDelete && (
                   <button
                     type="button"
-                    onClick={() => onDelete(r.name)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(r.name);
+                    }}
                     disabled={disabled || isUploading}
                     className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5"
                     title="Remove saved resume"
@@ -149,17 +160,6 @@ function ResumeSelector({
                     <span className="material-symbols-outlined text-[14px]">delete</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelect(r);
-                    setDropdownOpen(false);
-                  }}
-                  disabled={disabled || isUploading}
-                  className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide border border-[#27272A] bg-[#09090B] text-[#A1A1AA] hover:text-[#FAFAFA] hover:border-[#3F3F46] transition-all duration-200 disabled:opacity-50 shrink-0 cursor-pointer"
-                >
-                  Use
-                </button>
               </div>
             ))}
             <div className="px-3.5 py-2 border-t border-[#27272A] flex items-center gap-2">
@@ -168,7 +168,10 @@ function ResumeSelector({
               </span>
               <button
                 type="button"
-                onClick={onUploadClick}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUploadClick();
+                }}
                 disabled={disabled || isUploading}
                 className="text-[11px] font-medium text-[#4F7DF3] hover:text-[#5B8CFF] transition-colors cursor-pointer"
               >
@@ -271,11 +274,13 @@ function CategoryBadge({ category }) {
   const cfg = {
     TECHNICAL: { label: 'TECHNICAL', color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
     BEHAVIORAL: { label: 'BEHAVIORAL', color: 'text-purple-400 border-purple-500/30 bg-purple-500/10' },
-    SYSTEM_DESIGN: { label: 'SYSTEM DESIGN', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+    PROBLEM_SOLVING: { label: 'PROBLEM SOLVING', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+    ROLE_SPECIFIC: { label: 'ROLE SPECIFIC', color: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10' },
     PROJECT_DEEP_DIVE: { label: 'PROJECT DEEP-DIVE', color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
+    SYSTEM_DESIGN: { label: 'SYSTEM DESIGN', color: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10' },
   };
   const { label, color } = cfg[category] || {
-    label: category || 'GENERAL',
+    label: (category || 'GENERAL').replace(/_/g, ' '),
     color: 'text-slate-400 border-slate-500/30 bg-slate-500/10',
   };
   return (
@@ -321,7 +326,8 @@ export default function MockInterviewSection({ onViewKit }) {
   const [roleTitle, setRoleTitle] = useState('Software Engineer');
   const [companyName, setCompanyName] = useState('General');
   const [mode, setMode] = useState('mixed'); // 'technical' | 'behavioral' | 'mixed'
-  const [totalQuestions, setTotalQuestions] = useState(3); // 3 or 5
+  const [totalQuestions, setTotalQuestions] = useState(3); // 3–10
+  const [sessionPreset, setSessionPreset] = useState('quick'); // 'quick' | 'standard' | 'full' | 'custom'
 
   // Active Live Interview State
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(1);
@@ -462,6 +468,24 @@ export default function MockInterviewSection({ onViewKit }) {
     }
   }, []);
 
+  // Helper to retrieve latest Job Match / analysis context if available
+  const getJobContext = () => {
+    try {
+      const raw =
+        localStorage.getItem('careerlens_last_analysis') ||
+        localStorage.getItem('hireflow_last_analysis');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.jobMatch?.matchedSkills || parsed.jobMatch?.missingSkills) {
+          const matched = (parsed.jobMatch.matchedSkills || []).slice(0, 5).join(', ');
+          const missing = (parsed.jobMatch.missingSkills || []).slice(0, 5).join(', ');
+          return `Key matched skills: ${matched}. Target gaps / key focus areas: ${missing}.`;
+        }
+      }
+    } catch (_) {}
+    return '';
+  };
+
   // 3. Start Mock Interview (Calls AI to generate Question 1)
   const handleStartInterview = async () => {
     if (!selectedResume?.text) {
@@ -483,11 +507,14 @@ export default function MockInterviewSection({ onViewKit }) {
     setFinalReport(null);
 
     try {
+      const jobContext = getJobContext();
       const q1 = await startMockInterview(
         selectedResume.text,
         roleTitle.trim(),
         companyName.trim() || 'General',
-        mode
+        mode,
+        totalQuestions,
+        jobContext
       );
       setCurrentQuestion(q1.question);
       setCurrentCategory(q1.category || 'TECHNICAL');
@@ -512,6 +539,7 @@ export default function MockInterviewSection({ onViewKit }) {
     setIsTurnSubmitting(true);
 
     try {
+      const jobContext = getJobContext();
       const turnResult = await submitMockInterviewTurn({
         resumeText: selectedResume?.text || '',
         roleTitle: roleTitle.trim(),
@@ -522,6 +550,8 @@ export default function MockInterviewSection({ onViewKit }) {
         currentQuestion,
         currentCategory,
         userAnswer: userAnswer.trim(),
+        previousTurns: turns,
+        jobContext,
       });
 
       const completedTurn = {
@@ -904,26 +934,61 @@ export default function MockInterviewSection({ onViewKit }) {
                 <label className="font-label-caps text-[#A1A1AA] tracking-widest text-[10px] block mb-2 font-semibold">
                   SESSION LENGTH
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {[
-                    { count: 3, label: '3 Questions', desc: 'Sprint (~8 min)' },
-                    { count: 5, label: '5 Questions', desc: 'Standard Round (~15 min)' },
+                    { id: 'quick', count: 3, label: 'Quick', icon: 'bolt', desc: '3 Qs · ~8 min' },
+                    { id: 'standard', count: 5, label: 'Standard', icon: 'target', desc: '5 Qs · ~15 min' },
+                    { id: 'full', count: 8, label: 'Full', icon: 'diamond', desc: '8 Qs · ~20 min' },
+                    { id: 'custom', count: null, label: 'Custom', icon: 'tune', desc: '3–10 Qs' },
                   ].map((item) => (
                     <button
-                      key={item.count}
+                      key={item.id}
                       type="button"
-                      onClick={() => setTotalQuestions(item.count)}
-                      className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all cursor-pointer ${
-                        totalQuestions === item.count
+                      onClick={() => {
+                        setSessionPreset(item.id);
+                        if (item.count !== null) setTotalQuestions(item.count);
+                      }}
+                      className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                        sessionPreset === item.id
                           ? 'bg-[#4F7DF3]/15 border-[#4F7DF3] text-[#FAFAFA]'
                           : 'bg-[#111318] border-[#27272A] text-[#71717A] hover:text-[#FAFAFA] hover:border-[#3F3F46]'
                       }`}
                     >
-                      <span className="text-xs font-semibold">{item.label}</span>
-                      <span className="text-[10px] opacity-60">{item.desc}</span>
+                      <span className="material-symbols-outlined text-[16px] mb-0.5 text-[#4F7DF3]">
+                        {item.icon}
+                      </span>
+                      <span className="text-[11px] font-semibold leading-tight">{item.label}</span>
+                      <span className="text-[9px] opacity-60 leading-tight mt-0.5">{item.desc}</span>
                     </button>
                   ))}
                 </div>
+                {/* Custom stepper — visible only when Custom is selected */}
+                {sessionPreset === 'custom' && (
+                  <div className="mt-2.5 flex items-center justify-center gap-3 bg-[#111318] border border-[#27272A] rounded-xl px-4 py-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setTotalQuestions((q) => Math.max(3, q - 1))}
+                      disabled={totalQuestions <= 3}
+                      className="w-7 h-7 rounded-lg border border-[#3F3F46] bg-[#18181B] text-[#FAFAFA] flex items-center justify-center text-base font-bold transition-all hover:border-[#4F7DF3] hover:bg-[#4F7DF3]/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      −
+                    </button>
+                    <span className="text-sm font-bold text-[#FAFAFA] tabular-nums min-w-[3.5rem] text-center">
+                      {totalQuestions} <span className="text-[10px] font-normal text-[#71717A]">Qs</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setTotalQuestions((q) => Math.min(10, q + 1))}
+                      disabled={totalQuestions >= 10}
+                      className="w-7 h-7 rounded-lg border border-[#3F3F46] bg-[#18181B] text-[#FAFAFA] flex items-center justify-center text-base font-bold transition-all hover:border-[#4F7DF3] hover:bg-[#4F7DF3]/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      +
+                    </button>
+                    <span className="text-[10px] text-[#52525B] ml-1">
+                      ~{totalQuestions <= 3 ? 8 : totalQuestions <= 5 ? 15 : totalQuestions <= 8 ? 22 : 30} min
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
