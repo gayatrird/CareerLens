@@ -77,6 +77,8 @@ export default function App() {
   const [hasPreviousAnalysis, setHasPreviousAnalysis] = useState(false);
 
   const [activeTab, setActiveTab] = useState('DASHBOARD');
+  const [selectedMockSession, setSelectedMockSession] = useState(null);
+  const [selectedNavigatorResume, setSelectedNavigatorResume] = useState(null);
   const [user, setUser] = useState(null);
   const [currentRoute, setCurrentRoute] = useState('landing');
   const resultRef = useRef(null);
@@ -86,7 +88,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
 
-      // Reset in-memory analysis state on any user switch / logout
+      // Reset in-memory analysis and sub-view states on any user switch / logout
       setAnalysisState({
         resumeText: '',
         jobDescription: '',
@@ -98,6 +100,8 @@ export default function App() {
         activeAgent: null,
         completedAgents: [],
       });
+      setSelectedMockSession(null);
+      setSelectedNavigatorResume(null);
       setErrorMsg('');
       setRateLimitNotice('');
 
@@ -355,6 +359,31 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // ─── History 2.0 Result Restorers (Zero API calls, purely local) ─────────
+  const handleLoadAnalysis = (analysisRecord) => {
+    if (analysisRecord) {
+      setAnalysisState(analysisRecord);
+      setActiveTab('DOCKET');
+      setHasPreviousAnalysis(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleLoadMockInterview = (sessionRecord) => {
+    if (sessionRecord) {
+      setSelectedMockSession(sessionRecord);
+      setActiveTab('EVIDENCE');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleLoadNavigator = (resumeRecord) => {
+    if (resumeRecord) {
+      setSelectedNavigatorResume(resumeRecord);
+      setActiveTab('NAVIGATOR');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   const agentScores = {
     ats: analysisState.agentResults?.ats?.score,
@@ -519,12 +548,26 @@ export default function App() {
         )}
         {activeTab === 'NAVIGATOR' && (
           <CareerNavigatorSection
-            key={user?.uid || 'anonymous'}
+            key={`${user?.uid || 'anonymous'}_${selectedNavigatorResume?.name || 'default'}`}
+            initialResume={selectedNavigatorResume}
             onNavigateToAnalyze={() => setActiveTab('DOCKET')}
           />
         )}
-        {activeTab === 'ARCHIVES' && <HistorySection key={user?.uid || 'anonymous'} />}
-        {activeTab === 'EVIDENCE' && <InterviewSection key={user?.uid || 'anonymous'} />}
+        {activeTab === 'ARCHIVES' && (
+          <HistorySection
+            key={user?.uid || 'anonymous'}
+            onLoadAnalysis={handleLoadAnalysis}
+            onLoadMockInterview={handleLoadMockInterview}
+            onLoadNavigator={handleLoadNavigator}
+            onNavigate={setActiveTab}
+          />
+        )}
+        {activeTab === 'EVIDENCE' && (
+          <InterviewSection
+            key={`${user?.uid || 'anonymous'}_${selectedMockSession?.sessionId || 'default'}`}
+            initialSession={selectedMockSession}
+          />
+        )}
 
         {activeTab === 'CHAMBERS' && <SettingsSection key={user?.uid || 'anonymous'} />}
       </main>

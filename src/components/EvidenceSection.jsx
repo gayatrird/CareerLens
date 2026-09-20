@@ -8,7 +8,7 @@ import {
   setStoredLastAnalysis,
 } from '../services/userStorage';
 
-export default function InterviewSection() {
+export default function InterviewSection({ initialSession }) {
   const [activeSubTab, setActiveSubTab] = useState('MOCK'); // 'MOCK' | 'KIT'
   const [archives, setArchives] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
@@ -225,7 +225,7 @@ export default function InterviewSection() {
       </div>
 
       {activeSubTab === 'MOCK' ? (
-        <MockInterviewSection onViewKit={() => setActiveSubTab('KIT')} />
+        <MockInterviewSection initialSession={initialSession} onViewKit={() => setActiveSubTab('KIT')} />
       ) : (
         renderQuestionKit()
       )}

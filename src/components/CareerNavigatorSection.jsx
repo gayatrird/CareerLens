@@ -557,7 +557,7 @@ function NavigatorGenerationProgress({ isDone }) {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
+export default function CareerNavigatorSection({ onNavigateToAnalyze, initialResume }) {
   const [savedResumes, setSavedResumes] = useState([]);
   const [selectedResume, setSelectedResume] = useState(null);
   const [latestAnalysis, setLatestAnalysis] = useState(null);
@@ -587,7 +587,9 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
       setLatestAnalysis(analysis);
 
       let autoResume = null;
-      if (resumes && resumes.length > 0) {
+      if (initialResume && initialResume.text) {
+        autoResume = initialResume;
+      } else if (resumes && resumes.length > 0) {
         autoResume = { name: resumes[0].name, text: resumes[0].text, lastUsedAt: resumes[0].lastUsedAt };
       } else if (analysis && analysis.resumeText) {
         autoResume = { name: "Last Analysis Resume", text: analysis.resumeText };
@@ -602,7 +604,7 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
     }
     loadData();
     return () => { cancelled = true; };
-  }, []);
+  }, [initialResume]);
 
   const handleSelectResume = useCallback((resume) => {
     setSelectedResume(resume);

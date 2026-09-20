@@ -319,7 +319,7 @@ function VerdictBadge({ verdict }) {
 }
 
 // ─── Main Mock Interview Component ─────────────────────────────────────────────
-export default function MockInterviewSection({ onViewKit }) {
+export default function MockInterviewSection({ onViewKit, initialSession }) {
   // Session State
   const [sessionStage, setSessionStage] = useState('setup'); // 'setup' | 'interviewing' | 'report'
   const [savedResumes, setSavedResumes] = useState([]);
@@ -403,6 +403,21 @@ export default function MockInterviewSection({ onViewKit }) {
       cancelled = true;
     };
   }, []);
+
+  // Handle opening a specific session from History 2.0
+  useEffect(() => {
+    if (initialSession) {
+      setSelectedPastSession(initialSession);
+      setFinalReport(initialSession.finalReport);
+      setTurns(initialSession.turns || []);
+      setRoleTitle(initialSession.roleTitle || 'Software Engineer');
+      setCompanyName(initialSession.company || 'General');
+      setMode(initialSession.mode || 'mixed');
+      setSessionStage('report');
+      setShowPastSessions(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [initialSession]);
 
   // 2. Resume Selection & Upload Handlers
   const handleSelectResume = useCallback((resume) => {
