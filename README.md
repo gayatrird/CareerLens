@@ -15,7 +15,7 @@ CareerLens is an AI-powered career intelligence platform that helps users analyz
 ### Tech Stack
 
 - **Frontend**: React 19, Tailwind CSS v4, Vite
-- **AI / LLM**: Groq (Llama 3.3 70B Versatile) / Gemini API
+- **AI / LLM**: Groq (gpt-oss-120b) via Serverless Proxy
 - **Document Parsing**: PDF.js, Mammoth (DOCX)
 - **Authentication**: Firebase Authentication (optional Google Sign-In)
 
@@ -38,7 +38,7 @@ npm install
 Create a `.env` file in the root directory based on `.env.example`:
 
 ```bash
-VITE_GROQ_API_KEY=your_groq_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 #### Running the Development Server

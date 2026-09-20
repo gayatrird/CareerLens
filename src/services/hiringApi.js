@@ -1,6 +1,6 @@
 import { companyContexts } from '../config/agents';
 
-const API_URL = '/api/groq/openai/v1/chat/completions';
+const API_URL = '/api/groq';
 // gpt-oss-120b is used because the account's Groq key no longer has access to
 // llama-3.3-70b-versatile (returns 404). Same Groq client/provider, no change
 // to API_URL, retries, or response_format handling.
@@ -511,9 +511,6 @@ const getRateLimitWaitMs = (response, errorDetail, attempt) => {
 };
 
 const callGroq = async (systemPrompt, userContent, options = {}) => {
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  if (!apiKey) throw new Error('Groq API key is missing. Add VITE_GROQ_API_KEY to your .env file.');
-
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     // If an earlier call in this session was rate limited, wait out the shared
     // cooldown before firing — keeps sequential agents from each re-triggering
@@ -525,7 +522,7 @@ const callGroq = async (systemPrompt, userContent, options = {}) => {
     try {
       response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: MODEL,
           messages: [
@@ -753,9 +750,6 @@ ${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}Generate targeted inter
  * Score a resume section (used for live scoring during analysis)
  */
 export const scoreResumeSection = async (text, dimension = 'overall') => {
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-  if (!apiKey) return { ats: 50, technical: 50, communication: 50 };
-
   const systemPrompt = `You are a resume evaluator. Score this resume text on three dimensions.
 Respond ONLY in this exact JSON:
 {"ats": <0-100>, "technical": <0-100>, "communication": <0-100>}

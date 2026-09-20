@@ -1,8 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/groq/:match*",
-      "destination": "https://api.groq.com/:match*"
+      "source": "/((?!api/.*).*)",
+      "destination": "/index.html"
     }
   ]
 }
