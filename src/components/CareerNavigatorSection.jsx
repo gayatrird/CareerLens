@@ -1,35 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { loadSavedResumes, markResumeUsed, saveResume, removeSavedResume, parseResumeFile, MAX_RESUMES } from "../services/savedResume";
 import { generateCareerNavigator } from "../services/hiringApi";
+import { getStoredNavigator, setStoredNavigator, getStoredLastAnalysis } from "../services/userStorage";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const CACHE_KEY_PREFIX = "careerlens_navigator_";
-
-function resumeHash(text) {
-  if (!text) return "empty";
-  let h = 0;
-  for (let i = 0; i < Math.min(text.length, 500); i++) {
-    h = ((h << 5) - h + text.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h).toString(36);
-}
+// ─── Cache Helpers (User-scoped via userStorage) ──────────────────────────────
 
 function readCache(resumeText) {
-  try {
-    const key = CACHE_KEY_PREFIX + resumeHash(resumeText);
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  return getStoredNavigator(resumeText);
 }
 
 function writeCache(resumeText, result) {
-  try {
-    const key = CACHE_KEY_PREFIX + resumeHash(resumeText);
-    localStorage.setItem(key, JSON.stringify(result));
-  } catch { /* Storage quota — silent */ }
+  setStoredNavigator(resumeText, result);
 }
 
 // ─── Priority Badge ───────────────────────────────────────────────────────────
@@ -597,10 +578,7 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze }) {
       const resumes = await loadSavedResumes().catch(() => []);
       let analysis = null;
       try {
-        const raw =
-          localStorage.getItem("careerlens_last_analysis") ||
-          localStorage.getItem("hireflow_last_analysis");
-        if (raw) analysis = JSON.parse(raw);
+        analysis = getStoredLastAnalysis();
       } catch { /* corrupt storage */ }
 
       if (cancelled) return;

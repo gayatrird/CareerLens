@@ -1,14 +1,22 @@
 import React from 'react';
 import CareerLensLogo from './CareerLensLogo';
 
-export default function LandingPage({ onGetStarted }) {
+export default function LandingPage({ onGetStarted, onSignIn }) {
+  const handleSignInClick = () => {
+    if (typeof onSignIn === 'function') {
+      onSignIn();
+    } else if (typeof onGetStarted === 'function') {
+      onGetStarted();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#09090B] text-[#FAFAFA] font-sans relative overflow-hidden">
       {/* Landing page background grid — strictly scoped here, NOT on body/html */}
       <div className="landing-grid-overlay" />
 
-      {/* Top Navigation — transparent, grid visible behind it */}
-      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto border-b border-[#27272A]/50">
+      {/* Top Navigation — transparent, grid visible continuously behind it without bottom border */}
+      <nav className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto">
         <div className="flex items-center gap-3 cursor-pointer" onClick={onGetStarted}>
           <CareerLensLogo size={28} />
           <span className="font-bold text-lg tracking-tight">CareerLens</span>
@@ -21,12 +29,16 @@ export default function LandingPage({ onGetStarted }) {
         </div>
 
         <div className="flex items-center gap-4">
-          <button className="text-sm font-medium text-[#FAFAFA] hover:text-[#4F7DF3] transition-colors hidden sm:block">
+          <button 
+            type="button"
+            onClick={handleSignInClick}
+            className="text-sm font-medium text-[#FAFAFA] hover:text-[#4F7DF3] transition-colors hidden sm:block cursor-pointer"
+          >
             Sign In
           </button>
           <button 
             onClick={onGetStarted}
-            className="bg-[#4F7DF3] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#4069D0] transition-colors shadow-[0_0_15px_rgba(79,125,243,0.3)]"
+            className="bg-[#4F7DF3] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#4069D0] transition-colors shadow-[0_0_15px_rgba(79,125,243,0.3)] cursor-pointer"
           >
             Get Started
           </button>
@@ -51,17 +63,13 @@ export default function LandingPage({ onGetStarted }) {
             Match your resume to the right jobs, discover your ideal career path, and prepare for interviews with AI-powered guidance.
           </p>
           
-          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+          <div className="w-full sm:w-auto">
             <button 
               onClick={onGetStarted}
-              className="w-full sm:w-auto bg-[#4F7DF3] text-white px-8 py-3.5 rounded-xl text-[15px] font-semibold hover:bg-[#4069D0] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(79,125,243,0.3)]"
+              className="w-full sm:w-auto bg-[#4F7DF3] text-white px-8 py-3.5 rounded-xl text-[15px] font-semibold hover:bg-[#4069D0] transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(79,125,243,0.3)] hover:scale-[1.02] active:scale-95 cursor-pointer"
             >
               Start Analyzing for Free
               <span className="material-symbols-outlined text-[18px]">arrow_outward</span>
-            </button>
-            <button className="w-full sm:w-auto bg-transparent border border-[#27272A] text-[#FAFAFA] px-8 py-3.5 rounded-xl text-[15px] font-medium hover:border-[#3F3F46] hover:bg-[#111318] transition-all flex items-center justify-center gap-2">
-              <span className="material-symbols-outlined text-[18px]">play_circle</span>
-              Watch Demo
             </button>
           </div>
         </div>
@@ -313,7 +321,6 @@ export default function LandingPage({ onGetStarted }) {
             <ul className="space-y-2 text-sm text-[#A1A1AA]">
               <li><a href="#features" onClick={(e) => { e.preventDefault(); document.getElementById('features').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">Features</a></li>
               <li><a href="#how-it-works" onClick={(e) => { e.preventDefault(); document.getElementById('how-it-works').scrollIntoView({behavior: 'smooth'}); }} className="hover:text-[#FAFAFA] transition-colors">How it works</a></li>
-              <li><a href="#" onClick={(e) => { e.preventDefault(); onGetStarted(); }} className="hover:text-[#FAFAFA] transition-colors">Pricing</a></li>
             </ul>
           </div>
           

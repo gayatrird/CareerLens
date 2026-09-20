@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { generateInterviewQuestions } from '../services/hiringApi';
 import MockInterviewSection from './MockInterviewSection';
+import {
+  getStoredArchives,
+  setStoredArchives,
+  getStoredLastAnalysis,
+  setStoredLastAnalysis,
+} from '../services/userStorage';
 
 export default function InterviewSection() {
   const [activeSubTab, setActiveSubTab] = useState('MOCK'); // 'MOCK' | 'KIT'
@@ -10,10 +16,9 @@ export default function InterviewSection() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('courtroom_archives');
-      if (saved) {
-        const parsed = JSON.parse(saved).reverse();
-        setArchives(parsed);
+      const saved = getStoredArchives();
+      if (Array.isArray(saved)) {
+        setArchives([...saved].reverse());
       }
     } catch (e) {
       console.error("Error loading interview history", e);
@@ -32,18 +37,17 @@ export default function InterviewSection() {
       setArchives(updatedArchives);
       setExpandedId(item.id);
 
-      // Persist update to localStorage
-      const rawArchives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
+      // Persist update to user-scoped archives
+      const rawArchives = getStoredArchives();
       const updatedRaw = rawArchives.map(a => 
         a.id === item.id ? { ...a, interviewData: result } : a
       );
-      localStorage.setItem('courtroom_archives', JSON.stringify(updatedRaw));
+      setStoredArchives(updatedRaw);
 
-      const last = JSON.parse(localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis') || 'null');
+      const last = getStoredLastAnalysis();
       if (last && last.id === item.id) {
         last.interviewData = result;
-        localStorage.setItem('careerlens_last_analysis', JSON.stringify(last));
-        localStorage.setItem('hireflow_last_analysis', JSON.stringify(last));
+        setStoredLastAnalysis(last);
       }
     } catch (err) {
       console.error("Failed to generate interview questions", err);

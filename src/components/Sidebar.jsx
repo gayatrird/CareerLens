@@ -1,4 +1,5 @@
 import React from 'react';
+import { getStoredArchives } from '../services/userStorage';
 
 function useTheme() {
   const [theme, setTheme] = React.useState(() =>
@@ -17,18 +18,13 @@ function useTheme() {
 export default function Sidebar({ activeTab, setActiveTab }) {
   const theme = useTheme();
   const isLight = theme === 'light';
-  const [historyCount, setHistoryCount] = React.useState(12);
+  const [historyCount, setHistoryCount] = React.useState(0);
 
   React.useEffect(() => {
     try {
-      // Support all CareerLens storage keys
-      const saved =
-        localStorage.getItem('careerlens_history') ||
-        localStorage.getItem('courtroom_archives') ||
-        localStorage.getItem('courtRoomArchives');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.length > 0) setHistoryCount(parsed.length + 11);
+      const saved = getStoredArchives();
+      if (Array.isArray(saved)) {
+        setHistoryCount(saved.length);
       }
     } catch(e) {}
   }, []);
@@ -91,11 +87,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
             style={{ fontVariationSettings: activeTab === 'EVIDENCE' ? "'FILL' 1" : "'FILL' 0" }}
           >record_voice_over</span>
           <span className="text-xs font-semibold tracking-wider">Mock Interview</span>
-        </button>
-
-        <button className={getTabClass('SUBSCRIPTION')} onClick={() => setActiveTab && setActiveTab('SUBSCRIPTION')}>
-          <span className="material-symbols-outlined text-[18px]">credit_card</span>
-          <span className="text-xs font-semibold tracking-wider">Pricing</span>
         </button>
 
         <button className={getTabClass('CHAMBERS')} onClick={() => setActiveTab && setActiveTab('CHAMBERS')}>

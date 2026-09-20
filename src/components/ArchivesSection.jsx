@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getStoredArchives, setStoredArchives } from '../services/userStorage';
 
 function matchLabel(score) {
   if (score >= 75) return { label: 'STRONG FIT', colorClass: 'text-green-400' };
@@ -11,9 +12,9 @@ export default function HistorySection() {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('courtroom_archives');
-      if (saved) {
-        setArchives(JSON.parse(saved).reverse());
+      const saved = getStoredArchives();
+      if (Array.isArray(saved)) {
+        setArchives([...saved].reverse());
       }
     } catch (e) {
       console.error("Error loading history", e);
@@ -22,7 +23,7 @@ export default function HistorySection() {
 
   const clearHistory = () => {
     if (window.confirm("Clear all analysis history?")) {
-      localStorage.removeItem('courtroom_archives');
+      setStoredArchives([]);
       setArchives([]);
     }
   };

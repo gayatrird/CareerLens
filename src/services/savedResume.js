@@ -1,15 +1,16 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
+import { auth } from './firebase';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 // CareerLens — Saved Resume persistence (browser-local via IndexedDB).
 //
-// Stores up to MAX_RESUMES recently used resumes so the user does not have to
-// re-upload the same file for every analysis. Everything lives in the
-// browser's IndexedDB — nothing is sent to any server automatically.
+// Stores up to MAX_RESUMES recently used resumes per authenticated user so the
+// user does not have to re-upload the same file for every analysis.
+// Everything lives in the browser's IndexedDB scoped to the Firebase UID.
 //
-// Records are kept as an array under one key, ordered most-recently-used
+// Records are kept as an array under key `saved_${uid}`, ordered most-recently-used
 // first; every write preserves that order and caps the list at 5.
 //
 // Record shape:
@@ -22,20 +23,27 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.j
 //   file: Blob | null,   // original file, kept for future re-use
 //   savedAt: number,     // epoch ms
 //   lastUsedAt: number,  // epoch ms — drives the "Last used • …" label + order
+//   userId: string,      // Firebase UID
 // }
-//
-// All functions degrade gracefully: when IndexedDB is unavailable or an entry
-// is corrupt, loadSavedResumes() resolves to [] and callers fall back to the
-// normal upload UI. Nothing here logs resume contents.
 
 const DB_NAME = 'careerlens';
 const DB_VERSION = 1;
 const STORE_NAME = 'saved_resume';
-const LIST_KEY = 'saved';
-const LEGACY_KEY = 'current'; // single-resume entry written by earlier builds
+const LEGACY_LIST_KEY = 'saved';
+const LEGACY_SINGLE_KEY = 'current';
 export const MAX_RESUMES = 5;
 
 const isSupported = () => typeof indexedDB !== 'undefined';
+
+function resolveUid(explicitUid) {
+  if (explicitUid && typeof explicitUid === 'string') return explicitUid;
+  return auth?.currentUser?.uid || 'anonymous';
+}
+
+function getUserStoreKey(explicitUid) {
+  const uid = resolveUid(explicitUid);
+  return `saved_${uid}`;
+}
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -67,15 +75,13 @@ function runRequest(mode, fn) {
   });
 }
 
-// Persist the full list (plus best-effort cleanup of the legacy key) in one
-// transaction, resolving when the transaction commits.
-function writeRecords(list) {
+// Persist the user's list under their user-scoped key in one transaction.
+function writeRecords(list, key) {
   return openDb().then((db) => {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      store.put(list, LIST_KEY);
-      store.delete(LEGACY_KEY); // no-op when the legacy key is already gone
+      store.put(list, key);
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
       tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
@@ -91,7 +97,7 @@ const isValidRecord = (record) =>
   typeof record.text === 'string' &&
   record.text.trim().length > 0;
 
-function normalizeRecord(entry) {
+function normalizeRecord(entry, uid) {
   const now = Date.now();
   return {
     name: entry.name,
@@ -107,51 +113,87 @@ function normalizeRecord(entry) {
         : typeof entry.savedAt === 'number'
           ? entry.savedAt
           : now,
+    userId: entry.userId || uid || 'anonymous',
   };
 }
 
 /**
- * Load all saved resumes, most recently used first (max MAX_RESUMES).
- * Migrates the legacy single-resume record written by earlier builds.
- * @returns {Promise<Array<{name: string, type: string, size: number, lastModified: number, text: string, file: Blob|null, savedAt: number, lastUsedAt: number}>>}
+ * Load saved resumes for the current authenticated user, MRU first (max MAX_RESUMES).
+ * Performs safe one-time migration of legacy unscoped records only for the initial migrating user.
+ * @param {string} [explicitUid]
+ * @returns {Promise<Array<{name: string, type: string, size: number, lastModified: number, text: string, file: Blob|null, savedAt: number, lastUsedAt: number, userId: string}>>}
  */
-export async function loadSavedResumes() {
+export async function loadSavedResumes(explicitUid) {
   if (!isSupported()) return [];
+  const uid = resolveUid(explicitUid);
+  const userKey = getUserStoreKey(uid);
+
   try {
-    const raw = await runRequest('readonly', (store) => store.get(LIST_KEY));
-    const list = Array.isArray(raw)
-      ? raw.filter(isValidRecord).map(normalizeRecord).slice(0, MAX_RESUMES)
-      : null;
-    if (list && list.length > 0) return list;
-    // Nothing usable under LIST_KEY — migrate the legacy single-entry record
-    // written by earlier builds. This covers both "never saved before" and an
-    // emptied list (e.g. after a downgrade/upgrade cycle), so an old resume is
-    // never silently lost.
-    const legacy = await runRequest('readonly', (store) => store.get(LEGACY_KEY));
-    if (isValidRecord(legacy)) {
-      const migrated = [normalizeRecord(legacy)].slice(0, MAX_RESUMES);
-      writeRecords(migrated).catch(() => {});
-      return migrated;
+    const raw = await runRequest('readonly', (store) => store.get(userKey));
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.filter(isValidRecord).map((r) => normalizeRecord(r, uid)).slice(0, MAX_RESUMES);
     }
-    return list || [];
+
+    // Check if legacy migration applies for this user
+    if (uid !== 'anonymous') {
+      const migratedTo = localStorage.getItem('careerlens_legacy_migrated_to');
+      const isMigrated = localStorage.getItem('careerlens_legacy_migrated') === 'true';
+
+      // Migrate only if not migrated yet or if this is the user designated for legacy migration
+      if (!isMigrated || migratedTo === uid) {
+        const legacySaved = await runRequest('readonly', (store) => store.get(LEGACY_LIST_KEY));
+        const legacySingle = await runRequest('readonly', (store) => store.get(LEGACY_SINGLE_KEY));
+        const legacyList = Array.isArray(legacySaved)
+          ? legacySaved
+          : isValidRecord(legacySingle)
+            ? [legacySingle]
+            : [];
+
+        if (legacyList.length > 0) {
+          const migrated = legacyList
+            .filter(isValidRecord)
+            .map((r) => normalizeRecord({ ...r, userId: uid }, uid))
+            .slice(0, MAX_RESUMES);
+
+          if (migrated.length > 0) {
+            await writeRecords(migrated, userKey);
+            // Clean up legacy unscoped keys so they cannot be accessed by other users
+            await runRequest('readwrite', (store) => {
+              store.delete(LEGACY_LIST_KEY);
+              store.delete(LEGACY_SINGLE_KEY);
+            }).catch(() => {});
+            return migrated;
+          }
+        }
+      }
+    }
+
+    return [];
   } catch {
     return [];
   }
 }
 
 /**
- * Persist (or replace, by filename) a resume and move it to the top of the
- * saved list. Trims the list to MAX_RESUMES. Non-fatal on failure.
+ * Persist (or replace, by filename) a resume for the current user and move it to the top.
+ * Trims the list to MAX_RESUMES. Non-fatal on failure.
  * @param {{name: string, type?: string, size?: number, lastModified?: number, text: string, file?: Blob}} entry
+ * @param {string} [explicitUid]
  * @returns {Promise<boolean>}
  */
-export async function saveResume(entry) {
+export async function saveResume(entry, explicitUid) {
   if (!isSupported() || !entry || !entry.name || typeof entry.text !== 'string') return false;
+  const uid = resolveUid(explicitUid);
+  const userKey = getUserStoreKey(uid);
+
   try {
-    const current = await loadSavedResumes();
-    const record = normalizeRecord({ ...entry, savedAt: Date.now(), lastUsedAt: Date.now() });
-    const rest = current.filter((r) => r.name !== record.name); // never duplicate the same file
-    await writeRecords([record, ...rest].slice(0, MAX_RESUMES));
+    const current = await loadSavedResumes(uid);
+    const record = normalizeRecord(
+      { ...entry, userId: uid, savedAt: Date.now(), lastUsedAt: Date.now() },
+      uid
+    );
+    const rest = current.filter((r) => r.name !== record.name);
+    await writeRecords([record, ...rest].slice(0, MAX_RESUMES), userKey);
     return true;
   } catch {
     return false;
@@ -159,19 +201,25 @@ export async function saveResume(entry) {
 }
 
 /**
- * Mark a saved resume as the one just used: bump its lastUsedAt and move it to
- * the front of the list (persisted, so the order survives a refresh).
+ * Mark a saved resume as the one just used for current user.
  * @param {string} name
+ * @param {string} [explicitUid]
  * @returns {Promise<boolean>}
  */
-export async function markResumeUsed(name) {
+export async function markResumeUsed(name, explicitUid) {
   if (!isSupported() || !name) return false;
+  const uid = resolveUid(explicitUid);
+  const userKey = getUserStoreKey(uid);
+
   try {
-    const current = await loadSavedResumes();
+    const current = await loadSavedResumes(uid);
     const entry = current.find((r) => r.name === name);
     if (!entry) return false;
     const rest = current.filter((r) => r.name !== name);
-    await writeRecords([normalizeRecord({ ...entry, lastUsedAt: Date.now() }), ...rest]);
+    await writeRecords(
+      [normalizeRecord({ ...entry, lastUsedAt: Date.now() }, uid), ...rest],
+      userKey
+    );
     return true;
   } catch {
     return false;
@@ -179,24 +227,26 @@ export async function markResumeUsed(name) {
 }
 
 /**
- * Remove a saved resume by filename. Without a name, clears the whole saved
- * list (kept for compatibility with earlier callers). Resolves true when a
- * record was actually removed.
+ * Remove a saved resume by filename for the current user.
  * @param {string} [name]
+ * @param {string} [explicitUid]
  * @returns {Promise<boolean>}
  */
-export async function removeSavedResume(name) {
+export async function removeSavedResume(name, explicitUid) {
   if (!isSupported()) return false;
+  const uid = resolveUid(explicitUid);
+  const userKey = getUserStoreKey(uid);
+
   try {
-    const current = await loadSavedResumes();
+    const current = await loadSavedResumes(uid);
     if (!name) {
       if (current.length === 0) return false;
-      await writeRecords([]);
+      await writeRecords([], userKey);
       return true;
     }
     const next = current.filter((r) => r.name !== name);
     if (next.length === current.length) return false;
-    await writeRecords(next);
+    await writeRecords(next, userKey);
     return true;
   } catch {
     return false;
@@ -274,4 +324,3 @@ export async function parseResumeFile(file) {
     file,
   };
 }
-

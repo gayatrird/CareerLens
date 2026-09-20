@@ -2,6 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { playGavel } from '../utils/audio';
 import TypewriterText from './TypewriterText';
 import { generateInterviewQuestions } from '../services/hiringApi';
+import {
+  getStoredLastAnalysis,
+  setStoredLastAnalysis,
+  getStoredArchives,
+  setStoredArchives,
+} from '../services/userStorage';
 
 const CIRCUMFERENCE = 2 * Math.PI * 70;
 
@@ -119,20 +125,19 @@ export default function ResultSection({ recommendation, onNew, agentResults, dee
       setIsPreparing(true);
       playGavel();
 
-      // Save to archives
+      // Save to user-scoped archives
       try {
-        const last = JSON.parse(localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis') || 'null');
+        const last = getStoredLastAnalysis();
         if (last && last.id === analysisId) {
           last.interviewData = result;
-          localStorage.setItem('careerlens_last_analysis', JSON.stringify(last));
-          localStorage.setItem('hireflow_last_analysis', JSON.stringify(last));
+          setStoredLastAnalysis(last);
         }
 
-        const archives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
+        const archives = getStoredArchives();
         const updatedArchives = archives.map(a => 
           a.id === analysisId ? { ...a, interviewData: result } : a
         );
-        localStorage.setItem('courtroom_archives', JSON.stringify(updatedArchives));
+        setStoredArchives(updatedArchives);
       } catch (err) {
         console.error("Failed to save interview data to archives", err);
       }

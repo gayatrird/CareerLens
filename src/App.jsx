@@ -16,12 +16,18 @@ import SettingsSection from './components/ChambersSection';
 import DashboardSection from './components/DashboardSection';
 import CareerNavigatorSection from './components/CareerNavigatorSection';
 import MatchScoreboard from './components/Scoreboard';
-import SubscriptionSection from './components/SubscriptionSection';
 import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan, subscribeRateLimitRetry } from './services/hiringApi';
 import { computeJobMatch } from './services/jobMatch';
 import { initAudio } from './utils/audio';
 import TypewriterText from './components/TypewriterText';
 import { auth, onAuthStateChanged, signInWithPopup, googleProvider } from './services/firebase';
+import {
+  getStoredLastAnalysis,
+  setStoredLastAnalysis,
+  getStoredArchives,
+  setStoredArchives,
+  migrateLegacyDataIfNeeded,
+} from './services/userStorage';
 
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
@@ -79,23 +85,45 @@ export default function App() {
     if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+
+      // Reset in-memory analysis state on any user switch / logout
+      setAnalysisState({
+        resumeText: '',
+        jobDescription: '',
+        companyMode: 'general',
+        agentResults: {},
+        recommendation: null,
+        deepScanResult: null,
+        status: 'idle',
+        activeAgent: null,
+        completedAgents: [],
+      });
+      setErrorMsg('');
+      setRateLimitNotice('');
+
+      if (currentUser) {
+        // Safe one-time legacy data migration for initial user
+        migrateLegacyDataIfNeeded(currentUser.uid);
+        const saved = getStoredLastAnalysis(currentUser.uid);
+        setHasPreviousAnalysis(Boolean(saved));
+      } else {
+        setHasPreviousAnalysis(false);
+        setCurrentRoute('landing');
+      }
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    const saved = localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis');
-    if (saved) setHasPreviousAnalysis(true);
-
     const savedTheme = localStorage.getItem('careerlens_theme') || localStorage.getItem('hireflow_theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
   }, []);
 
   const loadPreviousAnalysis = () => {
     try {
-      const saved = localStorage.getItem('careerlens_last_analysis') || localStorage.getItem('hireflow_last_analysis');
+      const saved = getStoredLastAnalysis(user?.uid);
       if (saved) {
-        setAnalysisState(JSON.parse(saved));
+        setAnalysisState(saved);
         setHasPreviousAnalysis(false);
       }
     } catch (e) {
@@ -160,8 +188,8 @@ export default function App() {
       const isDailyLimit = isRateLimit && (errorMsgText.includes('TPD') || errorMsgText.includes('RPD') || errorMsgText.includes('per day') || errorMsgText.includes('daily'));
 
       if (isDailyLimit) {
-        setAnalysisState(prev => ({ ...prev, status: 'idle' }));
-        setActiveTab('SUBSCRIPTION');
+        setErrorMsg("Daily AI request limit reached. Please wait a while or try again later.");
+        setAnalysisState(prev => ({ ...prev, status: 'error' }));
       } else if (isRateLimit) {
         // All bounded retries were exhausted while Groq stayed rate limited.
         setErrorMsg("AI service stayed rate limited after several automatic retries. Wait about a minute, then press Try Again.");
@@ -271,13 +299,12 @@ export default function App() {
 
     setAnalysisState(finalState);
 
-    // Persist to localStorage
-    localStorage.setItem('careerlens_last_analysis', JSON.stringify(finalState));
-    localStorage.setItem('hireflow_last_analysis', JSON.stringify(finalState));
+    // Persist to user-scoped storage
+    setStoredLastAnalysis(finalState, user?.uid);
     try {
-      const existingArchives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
+      const existingArchives = getStoredArchives(user?.uid);
       existingArchives.push(finalState);
-      localStorage.setItem('courtroom_archives', JSON.stringify(existingArchives));
+      setStoredArchives(existingArchives, user?.uid);
     } catch (e) {
       console.error("Failed to save to history", e);
     }
@@ -292,14 +319,13 @@ export default function App() {
       setAnalysisState(newState);
       
       // Update persistent storage
-      localStorage.setItem('careerlens_last_analysis', JSON.stringify(newState));
-      localStorage.setItem('hireflow_last_analysis', JSON.stringify(newState));
+      setStoredLastAnalysis(newState, user?.uid);
       try {
-        const archives = JSON.parse(localStorage.getItem('courtroom_archives') || '[]');
+        const archives = getStoredArchives(user?.uid);
         const updatedArchives = archives.map(a => 
           a.id === newState.id ? newState : a
         );
-        localStorage.setItem('courtroom_archives', JSON.stringify(updatedArchives));
+        setStoredArchives(updatedArchives, user?.uid);
       } catch (err) {
         console.error("Failed to update archives with deep scan", err);
       }
@@ -342,14 +368,30 @@ export default function App() {
   })();
 
   if (currentRoute === 'landing') {
-    return <LandingPage onGetStarted={() => setCurrentRoute('app')} />;
+    return (
+      <LandingPage
+        onGetStarted={() => setCurrentRoute('app')}
+        onSignIn={async () => {
+          if (!auth) {
+            alert("Firebase Auth is not configured. Please add credentials to .env");
+            return;
+          }
+          try {
+            await signInWithPopup(auth, googleProvider);
+            setCurrentRoute('app');
+          } catch (error) {
+            console.error("Login failed", error);
+          }
+        }}
+      />
+    );
   }
 
   return (
     <div className="text-on-background selection:bg-primary/30 selection:text-primary min-h-screen relative" data-page="app">
       <BackgroundParticles />
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar key={user?.uid || 'anonymous'} activeTab={activeTab} setActiveTab={setActiveTab} />
 
       {toastVisible && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-[#171A20] border border-[#4F7DF3]/40 text-[#4F7DF3] px-6 py-3 rounded-xl shadow-lg z-50 animate-fade-in-up text-sm font-label-caps tracking-wider">
@@ -409,6 +451,7 @@ export default function App() {
             {/* Upload section — show only when idle */}
             {analysisState.status === 'idle' && (
               <UploadSection
+                key={user?.uid || 'anonymous'}
                 onStartAnalysis={handleStartAnalysis}
                 isAnalyzing={false}
               />
@@ -467,14 +510,23 @@ export default function App() {
           </>
         )}
 
-        {activeTab === 'DASHBOARD' && <DashboardSection onNavigateToAnalyze={() => setActiveTab('DOCKET')} />}
-        {activeTab === 'NAVIGATOR' && <CareerNavigatorSection onNavigateToAnalyze={() => setActiveTab('DOCKET')} />}
-        {activeTab === 'ARCHIVES' && <HistorySection />}
-        {activeTab === 'EVIDENCE' && <InterviewSection />}
+        {activeTab === 'DASHBOARD' && (
+          <DashboardSection
+            key={user?.uid || 'anonymous'}
+            onNavigate={setActiveTab}
+            onNavigateToAnalyze={() => setActiveTab('DOCKET')}
+          />
+        )}
+        {activeTab === 'NAVIGATOR' && (
+          <CareerNavigatorSection
+            key={user?.uid || 'anonymous'}
+            onNavigateToAnalyze={() => setActiveTab('DOCKET')}
+          />
+        )}
+        {activeTab === 'ARCHIVES' && <HistorySection key={user?.uid || 'anonymous'} />}
+        {activeTab === 'EVIDENCE' && <InterviewSection key={user?.uid || 'anonymous'} />}
 
-        {activeTab === 'SUBSCRIPTION' && <SubscriptionSection />}
-
-        {activeTab === 'CHAMBERS' && <SettingsSection />}
+        {activeTab === 'CHAMBERS' && <SettingsSection key={user?.uid || 'anonymous'} />}
       </main>
 
       <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />

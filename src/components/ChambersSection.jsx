@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { getMasterVolume, setMasterVolume, playTestSound } from '../utils/audio';
 import { auth } from '../services/firebase';
+import { getStoredArchives, clearUserHistory } from '../services/userStorage';
 
 export default function SettingsSection() {
   const [volume, setVolumeState] = useState(() => Math.round(getMasterVolume() * 100));
@@ -46,7 +47,7 @@ export default function SettingsSection() {
   };
   const handleExportData = () => {
     try {
-      const archives = localStorage.getItem('courtroom_archives') || '[]';
+      const archives = JSON.stringify(getStoredArchives());
       const blob = new Blob([archives], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url;
@@ -56,9 +57,7 @@ export default function SettingsSection() {
   };
   const handleClearHistory = () => {
     if (window.confirm('Clear all stored analyses? This cannot be undone.')) {
-      localStorage.removeItem('courtroom_archives');
-      localStorage.removeItem('careerlens_last_analysis');
-      localStorage.removeItem('hireflow_last_analysis');
+      clearUserHistory();
       showToast('History cleared.');
     }
   };

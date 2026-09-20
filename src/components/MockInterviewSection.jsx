@@ -12,8 +12,11 @@ import {
   parseResumeFile,
   MAX_RESUMES,
 } from '../services/savedResume';
-
-const STORAGE_KEY = 'careerlens_mock_interviews';
+import {
+  getStoredLastAnalysis,
+  getStoredMockInterviews,
+  setStoredMockInterviews,
+} from '../services/userStorage';
 
 // ─── Compact Resume Selector ───────────────────────────────────────────────────
 function ResumeSelector({
@@ -372,11 +375,8 @@ export default function MockInterviewSection({ onViewKit }) {
 
       // Prefill role from latest analysis if available
       try {
-        const raw =
-          localStorage.getItem('careerlens_last_analysis') ||
-          localStorage.getItem('hireflow_last_analysis');
-        if (raw) {
-          const parsed = JSON.parse(raw);
+        const parsed = getStoredLastAnalysis();
+        if (parsed) {
           if (parsed.jobDescription) {
             const firstLine = parsed.jobDescription.split('\n')[0].replace(/[#*]/g, '').trim();
             if (firstLine && firstLine.length < 50) {
@@ -389,11 +389,11 @@ export default function MockInterviewSection({ onViewKit }) {
         }
       } catch (_) {}
 
-      // Load past sessions
+      // Load past sessions (user-scoped)
       try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          setPastSessions(JSON.parse(stored));
+        const stored = getStoredMockInterviews();
+        if (Array.isArray(stored)) {
+          setPastSessions(stored);
         }
       } catch (_) {}
     }
@@ -471,11 +471,8 @@ export default function MockInterviewSection({ onViewKit }) {
   // Helper to retrieve latest Job Match / analysis context if available
   const getJobContext = () => {
     try {
-      const raw =
-        localStorage.getItem('careerlens_last_analysis') ||
-        localStorage.getItem('hireflow_last_analysis');
-      if (raw) {
-        const parsed = JSON.parse(raw);
+      const parsed = getStoredLastAnalysis();
+      if (parsed) {
         if (parsed.jobMatch?.matchedSkills || parsed.jobMatch?.missingSkills) {
           const matched = (parsed.jobMatch.matchedSkills || []).slice(0, 5).join(', ');
           const missing = (parsed.jobMatch.missingSkills || []).slice(0, 5).join(', ');
@@ -619,9 +616,9 @@ export default function MockInterviewSection({ onViewKit }) {
       };
 
       try {
-        const existing = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        const existing = getStoredMockInterviews();
         const updated = [sessionRecord, ...existing].slice(0, 15);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        setStoredMockInterviews(updated);
         setPastSessions(updated);
       } catch (storageErr) {
         console.warn('Storage quota exceeded for mock interview sessions', storageErr);
@@ -662,7 +659,7 @@ export default function MockInterviewSection({ onViewKit }) {
     try {
       const updated = pastSessions.filter((s) => s.sessionId !== id);
       setPastSessions(updated);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      setStoredMockInterviews(updated);
       if (selectedPastSession?.sessionId === id) {
         setSelectedPastSession(null);
       }
