@@ -64,11 +64,13 @@ export default function Header({ activeTab, setActiveTab }) {
       {/* Nav + Auth */}
       <div className="flex items-center gap-6">
         {setActiveTab && (
-          <nav className="hidden md:flex gap-7 items-center">
+          <nav className="hidden lg:flex gap-6 items-center">
             <button className={navClass('DASHBOARD')} onClick={() => setActiveTab('DASHBOARD')}>DASHBOARD</button>
             <button className={navClass('DOCKET')}    onClick={() => setActiveTab('DOCKET')}>ANALYZE</button>
-            <button className={navClass('ARCHIVES')}  onClick={() => setActiveTab('ARCHIVES')}>HISTORY</button>
+            <button className={navClass('NAVIGATOR')} onClick={() => setActiveTab('NAVIGATOR')}>NAVIGATOR</button>
             <button className={navClass('EVIDENCE')}  onClick={() => setActiveTab('EVIDENCE')}>INTERVIEW</button>
+            <button className={navClass('ARCHIVES')}  onClick={() => setActiveTab('ARCHIVES')}>HISTORY</button>
+            <button className={navClass('CHAMBERS')}  onClick={() => setActiveTab('CHAMBERS')}>SETTINGS</button>
           </nav>
         )}
 

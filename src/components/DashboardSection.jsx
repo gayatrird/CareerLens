@@ -171,7 +171,19 @@ export default function DashboardSection({ onNavigate, onNavigateToAnalyze }) {
     latestAnalysis?.agentResults?.ats?.score ??
     null;
   const jobMatchRole = jobMatchData?.targetRole || latestAnalysis?.topic || null;
+  const jobMatchDomain = jobMatchData?.targetDomain || latestAnalysis?.agentResults?.ats?.detectedDomain || null;
   const jobMatchLevel = jobMatchData?.matchLevel || null;
+
+  // Domain depth vs technical match label
+  const isTechDomain = !jobMatchDomain || jobMatchDomain.toLowerCase().includes('tech') || jobMatchDomain.toLowerCase().includes('soft') || jobMatchDomain.toLowerCase().includes('dev');
+  const d = (jobMatchDomain || '').toLowerCase();
+  const isHealthDomain = d.includes('health') || d.includes('nurs') || d.includes('medic');
+  const domainDepthScore = jobMatchData?.domainDepthMatch ?? jobMatchData?.technicalMatch ?? null;
+  const domainDepthLabel = isHealthDomain
+    ? 'Clinical Depth'
+    : !isTechDomain
+    ? 'Domain Depth'
+    : 'Technical Depth';
 
   // Career Navigator
   const topCareerPath = careerNav?.topCareerPaths?.[0] || null;
@@ -243,7 +255,7 @@ export default function DashboardSection({ onNavigate, onNavigateToAnalyze }) {
       title: 'Focus on your next career milestone',
       desc:
         careerNav.nextBestAction ||
-        `Focus on bridging your priority skills in ${priorityGaps[0]?.skill || 'core engineering domain'}.`,
+        `Focus on bridging your priority skills in ${priorityGaps[0]?.skill || (jobMatchDomain ? `${jobMatchDomain} core competencies` : 'core domain competencies')}.`,
       btnLabel: 'Review Roadmap',
       icon: 'flag',
       tab: 'NAVIGATOR',
@@ -318,13 +330,23 @@ export default function DashboardSection({ onNavigate, onNavigateToAnalyze }) {
       {/* ─── 1. HEADER SECTION ────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 pb-1">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center flex-wrap gap-2 mb-1">
             <span className="font-label-caps text-[#4F7DF3] text-[10px] tracking-[0.25em] uppercase font-bold">
               CAREERLENS
             </span>
             <span className="bg-[#4F7DF3]/15 text-[#4F7DF3] border border-[#4F7DF3]/30 text-[9px] font-label-caps tracking-widest px-2 py-0.5 rounded-full font-semibold">
               OVERVIEW
             </span>
+            {jobMatchDomain && (
+              <span className="bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 text-[9px] font-label-caps tracking-wider px-2 py-0.5 rounded-full font-medium">
+                {jobMatchDomain}
+              </span>
+            )}
+            {jobMatchRole && (
+              <span className="bg-[#8B5CF6]/15 text-[#A78BFA] border border-[#8B5CF6]/30 text-[9px] font-label-caps tracking-wider px-2 py-0.5 rounded-full font-medium hidden sm:inline-block">
+                {jobMatchRole}
+              </span>
+            )}
           </div>
           <h1 className="font-headline-md text-2xl md:text-3xl text-[#FAFAFA] tracking-tight font-bold">
             CareerLens Dashboard
@@ -383,9 +405,16 @@ export default function DashboardSection({ onNavigate, onNavigateToAnalyze }) {
                 Analyze <span className="material-symbols-outlined text-[12px]">arrow_forward</span>
               </span>
             </div>
-            <span className="font-label-caps text-[10px] text-[#71717A] tracking-widest uppercase block mb-1">
-              JOB MATCH
-            </span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-label-caps text-[10px] text-[#71717A] tracking-widest uppercase block">
+                JOB MATCH
+              </span>
+              {domainDepthScore !== null && (
+                <span className="text-[10px] font-medium text-[#71717A]" title={`${domainDepthLabel}: ${domainDepthScore}%`}>
+                  {domainDepthLabel}: <span className="text-[#FAFAFA] font-bold">{domainDepthScore}%</span>
+                </span>
+              )}
+            </div>
             {jobMatchScore !== null ? (
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-black text-[#FAFAFA] tracking-tight">
@@ -403,9 +432,14 @@ export default function DashboardSection({ onNavigate, onNavigateToAnalyze }) {
               </span>
             )}
           </div>
-          <p className="text-[11px] text-[#71717A] mt-3 line-clamp-1 border-t border-[#27272A] pt-2.5">
-            {jobMatchRole || 'Run Job Match analysis to measure ATS fit'}
-          </p>
+          <div className="mt-3 border-t border-[#27272A] pt-2.5 flex items-center justify-between gap-1 text-[11px] text-[#71717A]">
+            <span className="truncate">{jobMatchRole || 'Run Job Match analysis to measure fit'}</span>
+            {jobMatchDomain && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#2D2F36] text-[#A1A1AA] shrink-0 font-medium">
+                {jobMatchDomain}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Card 2: Career Direction */}

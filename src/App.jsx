@@ -17,8 +17,8 @@ import DashboardSection from './components/DashboardSection';
 import CareerNavigatorSection from './components/CareerNavigatorSection';
 import MatchScoreboard from './components/Scoreboard';
 import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan, subscribeRateLimitRetry } from './services/hiringApi';
-import { computeJobMatch } from './services/jobMatch';
-import { initAudio } from './utils/audio';
+import { computeJobMatch, detectJobDomain } from './services/jobMatch';
+import { initAudio, playAnalysisStart, playAgentComplete, playResultReveal } from './utils/audio';
 import TypewriterText from './components/TypewriterText';
 import { auth, onAuthStateChanged, signInWithPopup, googleProvider } from './services/firebase';
 import {
@@ -27,11 +27,26 @@ import {
   getStoredArchives,
   setStoredArchives,
   migrateLegacyDataIfNeeded,
+  getStoredUserMotion,
 } from './services/userStorage';
 
 const delay = ms => new Promise(res => setTimeout(res, ms));
 
 function BackgroundParticles() {
+  const [reduceMotion, setReduceMotion] = React.useState(() => {
+    return typeof document !== 'undefined' && document.documentElement.getAttribute('data-reduce-motion') === 'true';
+  });
+
+  React.useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setReduceMotion(document.documentElement.getAttribute('data-reduce-motion') === 'true');
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduce-motion'] });
+    return () => observer.disconnect();
+  }, []);
+
+  if (reduceMotion) return null;
+
   return (
     <div className="fixed inset-0 pointer-events-none z-[0] overflow-hidden">
       <div className="absolute top-[20%] left-[10%] w-1.5 h-1.5 rounded-full bg-[#4F7DF3]/25 shadow-[0_0_12px_rgba(79,125,243,0.5)] animate-[float_10s_infinite_ease-in-out]"></div>
@@ -49,9 +64,9 @@ function BackgroundParticles() {
 const AGENT_ORDER = ['ats', 'recruiter', 'engineer', 'manager', 'optimizer'];
 
 const TRANSITION_LABELS = {
-  ats: '🤖 ATS ANALYSIS — SCANNING KEYWORDS',
-  recruiter: '📋 RECRUITER REVIEW — EVALUATING PROJECTS',
-  engineer: '⚙️ TECHNICAL REVIEW — ANALYZING DEPTH',
+  ats: '🤖 ATS ANALYSIS — SCANNING REQUIREMENTS & DOMAIN',
+  recruiter: '📋 CANDIDATE SCREENING — EVALUATING RELEVANCE',
+  engineer: '⚙️ DOMAIN SPECIALIST — ANALYZING DEPTH & RIGOR',
   manager: '🎯 HIRING MANAGER — MAKING DECISION',
   optimizer: '✨ RESUME OPTIMIZER — IMPROVING CONTENT',
 };
@@ -110,9 +125,21 @@ export default function App() {
         migrateLegacyDataIfNeeded(currentUser.uid);
         const saved = getStoredLastAnalysis(currentUser.uid);
         setHasPreviousAnalysis(Boolean(saved));
+        const isMotionReduced = getStoredUserMotion(currentUser.uid);
+        if (isMotionReduced) {
+          document.documentElement.setAttribute('data-reduce-motion', 'true');
+        } else {
+          document.documentElement.removeAttribute('data-reduce-motion');
+        }
       } else {
         setHasPreviousAnalysis(false);
         setCurrentRoute('landing');
+        const isMotionReduced = getStoredUserMotion('anonymous');
+        if (isMotionReduced) {
+          document.documentElement.setAttribute('data-reduce-motion', 'true');
+        } else {
+          document.documentElement.removeAttribute('data-reduce-motion');
+        }
       }
     });
     return () => unsubscribe();
@@ -121,6 +148,13 @@ export default function App() {
   useEffect(() => {
     const savedTheme = localStorage.getItem('careerlens_theme') || localStorage.getItem('hireflow_theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
+
+    const isMotionReduced = getStoredUserMotion(auth?.currentUser?.uid);
+    if (isMotionReduced) {
+      document.documentElement.setAttribute('data-reduce-motion', 'true');
+    } else {
+      document.documentElement.removeAttribute('data-reduce-motion');
+    }
   }, []);
 
   const loadPreviousAnalysis = () => {
@@ -162,6 +196,7 @@ export default function App() {
     setRateLimitNotice('');
     setHasPreviousAnalysis(false);
     initAudio();
+    playAnalysisStart();
 
     setAnalysisState({
       resumeText,
@@ -219,7 +254,14 @@ export default function App() {
   };
 
   const runAnalysisEngine = async (resumeText, jobDescription, companyMode) => {
-    let accumulatedResults = {};
+    // Current analysis isolation: initialize fresh domain context strictly from current inputs
+    const freshDomainInfo = detectJobDomain(jobDescription, resumeText);
+    let accumulatedResults = {
+      ats: {
+        detectedDomain: freshDomainInfo.domain,
+        detectedRole: freshDomainInfo.role,
+      }
+    };
     let completedAgents = [];
     // Records per-agent failures (reported, never silently swallowed). A failed
     // agent does not stop the pipeline: successful agents are preserved and the
@@ -237,8 +279,8 @@ export default function App() {
       }));
 
       try {
-        // Call the agent API
-        const result = await analyzeWithAgent(agentId, resumeText, jobDescription, companyMode);
+        // Call the agent API with accumulated results context (for domain & role awareness)
+        const result = await analyzeWithAgent(agentId, resumeText, jobDescription, companyMode, accumulatedResults);
         accumulatedResults = { ...accumulatedResults, [agentId]: result };
       } catch (err) {
         console.error(`Agent "${agentId}" failed:`, err);
@@ -253,6 +295,8 @@ export default function App() {
         activeAgent: null,
         completedAgents,
       }));
+
+      playAgentComplete();
 
       // Wait 1.2 seconds between agents to allow the typewriter effect to progress 
       // and prevent visual flickering or feeling like it's happening all at once.
@@ -287,7 +331,7 @@ export default function App() {
     const finalState = {
       id: Math.random().toString(36).substring(2, 8).toUpperCase(),
       date: new Date().toISOString(),
-      topic: jobDescription.substring(0, 100),
+      topic: jobMatch?.targetRole ? `${jobMatch.targetRole} (${jobMatch.targetDomain || 'Role'})` : jobDescription.substring(0, 100),
       resumeText,
       jobDescription,
       companyMode,
@@ -302,6 +346,7 @@ export default function App() {
     };
 
     setAnalysisState(finalState);
+    playResultReveal();
 
     // Persist to user-scoped storage
     setStoredLastAnalysis(finalState, user?.uid);
@@ -318,7 +363,11 @@ export default function App() {
 
   const handleRunDeepScan = async () => {
     try {
-      const result = await runDeepAtsScan(analysisState.resumeText, analysisState.jobDescription);
+      const context = {
+        role: analysisState?.jobMatch?.targetRole || analysisState?.agentResults?.ats?.detectedRole,
+        domain: analysisState?.jobMatch?.targetDomain || analysisState?.agentResults?.ats?.detectedDomain,
+      };
+      const result = await runDeepAtsScan(analysisState.resumeText, analysisState.jobDescription, context);
       const newState = { ...analysisState, deepScanResult: result };
       setAnalysisState(newState);
       
@@ -512,6 +561,13 @@ export default function App() {
                 agentResults={analysisState.agentResults}
                 activeAgent={analysisState.activeAgent}
                 overallScore={overallScore}
+                domainContext={
+                  analysisState.jobMatch?.targetDomain
+                    ? { domain: analysisState.jobMatch.targetDomain, role: analysisState.jobMatch.targetRole }
+                    : analysisState.agentResults?.ats?.detectedDomain
+                    ? { domain: analysisState.agentResults.ats.detectedDomain, role: analysisState.agentResults.ats.detectedRole }
+                    : detectJobDomain(analysisState.jobDescription, analysisState.resumeText)
+                }
               />
             )}
 

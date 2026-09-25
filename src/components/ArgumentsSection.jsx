@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TypewriterText from './TypewriterText';
+import { getDomainSpecialistPersona } from '../services/hiringApi';
 
 function ThinkingDots({ colorClass }) {
   return (
@@ -48,7 +49,7 @@ function AgentScoreBar({ label, score, color }) {
   );
 }
 
-function AgentResultCard({ agent, result, isThinking, cardRef }) {
+function AgentResultCard({ agent, result, isThinking, cardRef, allResults = {}, domainContext = null }) {
   const [typed, setTyped] = useState(false);
 
   const hasContent = !!result?.summary;
@@ -66,6 +67,21 @@ function AgentResultCard({ agent, result, isThinking, cardRef }) {
   };
 
   const score = getScore();
+
+  const detectedDomain =
+    result?.detectedDomain ||
+    allResults?.ats?.detectedDomain ||
+    domainContext?.domain ||
+    '';
+  const detectedRole =
+    result?.detectedRole ||
+    allResults?.ats?.detectedRole ||
+    domainContext?.role ||
+    '';
+
+  const persona = getDomainSpecialistPersona(detectedDomain, detectedRole);
+  const specialistPersonaRole = agent.id === 'engineer' ? persona.title : agent.role;
+  const isTechDomain = detectedDomain.toLowerCase().includes('tech') || detectedDomain.toLowerCase().includes('soft') || detectedDomain.toLowerCase().includes('dev');
 
   return (
     <div className="relative" ref={cardRef}>
@@ -101,7 +117,7 @@ function AgentResultCard({ agent, result, isThinking, cardRef }) {
               </div>
               <div>
                 <p className="font-label-caps text-xs tracking-widest" style={{ color: agent.color }}>{agent.name}</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider">{agent.role}</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider">{specialistPersonaRole}</p>
               </div>
             </div>
             {score != null && (
@@ -159,7 +175,9 @@ function AgentResultCard({ agent, result, isThinking, cardRef }) {
               )}
               {agent.id === 'engineer' && result.likelyInterviewQuestions?.length > 0 && (
                 <div className="bg-black/30 rounded-xl p-4 border border-white/5 col-span-full">
-                  <p className="font-label-caps text-[10px] text-primary/70 mb-2 tracking-widest">LIKELY INTERVIEW QUESTIONS</p>
+                  <p className="font-label-caps text-[10px] text-primary/70 mb-2 tracking-widest">
+                    {isTechDomain ? 'LIKELY TECHNICAL INTERVIEW QUESTIONS' : `${persona.domainLabel?.toUpperCase() || 'DOMAIN'} INTERVIEW QUESTIONS`}
+                  </p>
                   <ul className="space-y-1">
                     {result.likelyInterviewQuestions.slice(0, 3).map((q, i) => (
                       <li key={i} className="text-[12px] text-slate-400 flex gap-2">
@@ -196,7 +214,7 @@ function AgentResultCard({ agent, result, isThinking, cardRef }) {
   );
 }
 
-export default function AnalysisSection({ agents, agentResults, activeAgent, overallScore }) {
+export default function AnalysisSection({ agents, agentResults, activeAgent, overallScore, domainContext = null }) {
   const cardRefs = useRef({});
 
   useEffect(() => {
@@ -204,6 +222,15 @@ export default function AnalysisSection({ agents, agentResults, activeAgent, ove
       cardRefs.current[activeAgent].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [activeAgent]);
+
+  const effectiveDomain =
+    domainContext?.domain ||
+    agentResults?.ats?.detectedDomain ||
+    '';
+  const effectiveRole =
+    domainContext?.role ||
+    agentResults?.ats?.detectedRole ||
+    '';
 
   return (
     <div className="mb-20 max-w-3xl mx-auto">
@@ -242,6 +269,8 @@ export default function AnalysisSection({ agents, agentResults, activeAgent, ove
               key={agent.id}
               agent={agent}
               result={result}
+              allResults={agentResults}
+              domainContext={{ domain: effectiveDomain, role: effectiveRole }}
               isThinking={isThinking}
               cardRef={(el) => { cardRefs.current[agent.id] = el; }}
             />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   startMockInterview,
   submitMockInterviewTurn,
@@ -16,7 +16,10 @@ import {
   getStoredLastAnalysis,
   getStoredMockInterviews,
   setStoredMockInterviews,
+  getResumeFingerprint,
 } from '../services/userStorage';
+import { detectJobDomain } from '../services/jobMatch';
+import { playInterviewStart, playInterviewComplete } from '../utils/audio';
 
 // ─── Compact Resume Selector ───────────────────────────────────────────────────
 function ResumeSelector({
@@ -272,15 +275,34 @@ function ScoreRing({ score, label, size = 64 }) {
   );
 }
 
-// ─── Category Badge ────────────────────────────────────────────────────────────
-function CategoryBadge({ category }) {
+function CategoryBadge({ category, domain = '' }) {
+  const d = (domain || '').toLowerCase();
+  const isHealth = d.includes('health') || d.includes('nurs') || d.includes('medic');
+  const isEdu = d.includes('educat') || d.includes('teach');
+  const isFin = d.includes('finan') || d.includes('account');
+  const isTech = !domain || d.includes('tech') || d.includes('soft') || d.includes('dev');
+
+  let techLabel = 'TECHNICAL';
+  if (!isTech) {
+    if (isHealth) techLabel = 'CLINICAL KNOWLEDGE';
+    else if (isEdu) techLabel = 'PEDAGOGICAL KNOWLEDGE';
+    else if (isFin) techLabel = 'FINANCIAL KNOWLEDGE';
+    else techLabel = 'DOMAIN KNOWLEDGE';
+  }
+
+  const projLabel = isTech ? 'PROJECT DEEP-DIVE' : 'EXPERIENCE DEEP-DIVE';
+  const sysLabel = isTech ? 'SYSTEM DESIGN' : (isHealth ? 'CLINICAL TRIAGE' : 'SCENARIO ANALYSIS');
+
   const cfg = {
-    TECHNICAL: { label: 'TECHNICAL', color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
+    TECHNICAL: { label: techLabel, color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
+    DOMAIN_KNOWLEDGE: { label: techLabel, color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
     BEHAVIORAL: { label: 'BEHAVIORAL', color: 'text-purple-400 border-purple-500/30 bg-purple-500/10' },
     PROBLEM_SOLVING: { label: 'PROBLEM SOLVING', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
     ROLE_SPECIFIC: { label: 'ROLE SPECIFIC', color: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10' },
-    PROJECT_DEEP_DIVE: { label: 'PROJECT DEEP-DIVE', color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
-    SYSTEM_DESIGN: { label: 'SYSTEM DESIGN', color: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10' },
+    PROJECT_DEEP_DIVE: { label: projLabel, color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
+    EXPERIENCE_DEEP_DIVE: { label: projLabel, color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' },
+    SYSTEM_DESIGN: { label: sysLabel, color: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10' },
+    SCENARIO_ANALYSIS: { label: sysLabel, color: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10' },
   };
   const { label, color } = cfg[category] || {
     label: (category || 'GENERAL').replace(/_/g, ' '),
@@ -318,6 +340,40 @@ function VerdictBadge({ verdict }) {
   );
 }
 
+// ─── Dynamic Answer Placeholder Helper ─────────────────────────────────────────
+export function getAnswerPlaceholder(domain = '', category = '') {
+  const cat = String(category || '').trim().toUpperCase();
+  const isBehavioral = cat === 'BEHAVIORAL' || cat.includes('BEHAVIORAL');
+
+  if (isBehavioral) {
+    return 'Use the STAR format (Situation, Task, Action, Result): describe the situation, your actions, and the outcome...';
+  }
+
+  const rawDomain = (typeof domain === 'string' ? domain : domain?.name || domain?.label || domain?.id || '') || '';
+  const d = rawDomain.toLowerCase().trim();
+
+  const isHealth = d.includes('health') || d.includes('nurs') || d.includes('medic') || d.includes('clinic');
+  const isEdu = d.includes('educat') || d.includes('teach') || d.includes('school') || d.includes('academ');
+  const isFin = d.includes('finan') || d.includes('account') || d.includes('audit') || d.includes('tax') || d.includes('bank');
+  const isTech = d.includes('tech') || d.includes('soft') || d.includes('dev') || d.includes('data') || d.includes('cloud') || d.includes('engineer') || d.includes('comput') || d.includes('code');
+
+  if (isTech) {
+    return 'Explain your technical approach, key decisions, trade-offs, and outcome...';
+  }
+  if (isHealth) {
+    return 'Describe your clinical approach, actions taken, patient-safety considerations, and outcome...';
+  }
+  if (isEdu) {
+    return 'Describe your teaching approach, classroom example, actions taken, and outcome...';
+  }
+  if (isFin) {
+    return 'Explain your financial approach, analysis, decisions, and outcome...';
+  }
+
+  return 'Give a clear example, explain your approach and actions, and describe the outcome...';
+}
+
+
 // ─── Main Mock Interview Component ─────────────────────────────────────────────
 export default function MockInterviewSection({ onViewKit, initialSession }) {
   // Session State
@@ -326,7 +382,22 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
   const [selectedResume, setSelectedResume] = useState(null);
 
   // Setup Form
-  const [roleTitle, setRoleTitle] = useState('Software Engineer');
+  const [roleTitle, setRoleTitle] = useState(() => {
+    try {
+      const parsed = getStoredLastAnalysis();
+      return parsed?.jobMatch?.targetRole || parsed?.agentResults?.ats?.detectedRole || '';
+    } catch (_) {
+      return '';
+    }
+  });
+  const [targetDomain, setTargetDomain] = useState(() => {
+    try {
+      const parsed = getStoredLastAnalysis();
+      return parsed?.jobMatch?.targetDomain || parsed?.agentResults?.ats?.detectedDomain || '';
+    } catch (_) {
+      return '';
+    }
+  });
   const [companyName, setCompanyName] = useState('General');
   const [mode, setMode] = useState('mixed'); // 'technical' | 'behavioral' | 'mixed'
   const [totalQuestions, setTotalQuestions] = useState(3); // 3–10
@@ -359,7 +430,7 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
   const [uploadError, setUploadError] = useState('');
   const [uploadNotice, setUploadNotice] = useState('');
 
-  // 1. Initial Load: Load saved resumes, prefill from latest analysis, load past sessions
+  // 1. Initial Load: Load saved resumes, prefill from selected resume / latest analysis, load past sessions
   useEffect(() => {
     let cancelled = false;
     async function init() {
@@ -369,25 +440,51 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
         const list = Array.isArray(resumes) ? resumes : [];
         setSavedResumes(list);
         if (list.length > 0) {
-          setSelectedResume(list[0]);
+          const active = list[0];
+          setSelectedResume(active);
+
+          // Check if latest analysis strictly matches this resume's content
+          let matchedAnalysis = null;
+          try {
+            const parsed = getStoredLastAnalysis();
+            if (
+              parsed?.resumeText &&
+              active?.text &&
+              getResumeFingerprint(active.text) === getResumeFingerprint(parsed.resumeText)
+            ) {
+              matchedAnalysis = parsed;
+            }
+          } catch (_) {}
+
+          if (matchedAnalysis) {
+            const detectedRole = matchedAnalysis.jobMatch?.targetRole || matchedAnalysis.agentResults?.ats?.detectedRole;
+            const detectedDom = matchedAnalysis.jobMatch?.targetDomain || matchedAnalysis.agentResults?.ats?.detectedDomain;
+            if (detectedRole) setRoleTitle(detectedRole);
+            if (detectedDom) setTargetDomain(detectedDom);
+            if (matchedAnalysis.companyMode && matchedAnalysis.companyMode !== 'general') {
+              setCompanyName(matchedAnalysis.companyMode.charAt(0).toUpperCase() + matchedAnalysis.companyMode.slice(1));
+            }
+          } else if (active?.text) {
+            const detected = detectJobDomain('', active.text);
+            if (detected?.domain) setTargetDomain(detected.domain);
+            if (detected?.role) setRoleTitle(detected.role);
+          }
+        } else {
+          // No saved resumes: prefill from latest analysis if available
+          try {
+            const parsed = getStoredLastAnalysis();
+            if (parsed) {
+              const detectedRole = parsed.jobMatch?.targetRole || parsed.agentResults?.ats?.detectedRole;
+              const detectedDom = parsed.jobMatch?.targetDomain || parsed.agentResults?.ats?.detectedDomain;
+              if (detectedRole) setRoleTitle(detectedRole);
+              if (detectedDom) setTargetDomain(detectedDom);
+              if (parsed.companyMode && parsed.companyMode !== 'general') {
+                setCompanyName(parsed.companyMode.charAt(0).toUpperCase() + parsed.companyMode.slice(1));
+              }
+            }
+          } catch (_) {}
         }
       }
-
-      // Prefill role from latest analysis if available
-      try {
-        const parsed = getStoredLastAnalysis();
-        if (parsed) {
-          if (parsed.jobDescription) {
-            const firstLine = parsed.jobDescription.split('\n')[0].replace(/[#*]/g, '').trim();
-            if (firstLine && firstLine.length < 50) {
-              setRoleTitle(firstLine);
-            }
-          }
-          if (parsed.companyMode && parsed.companyMode !== 'general') {
-            setCompanyName(parsed.companyMode.charAt(0).toUpperCase() + parsed.companyMode.slice(1));
-          }
-        }
-      } catch (_) {}
 
       // Load past sessions (user-scoped)
       try {
@@ -410,7 +507,7 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
       setSelectedPastSession(initialSession);
       setFinalReport(initialSession.finalReport);
       setTurns(initialSession.turns || []);
-      setRoleTitle(initialSession.roleTitle || 'Software Engineer');
+      setRoleTitle(initialSession.roleTitle || '');
       setCompanyName(initialSession.company || 'General');
       setMode(initialSession.mode || 'mixed');
       setSessionStage('report');
@@ -427,6 +524,31 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
       ...prev.filter((r) => r.name !== resume.name),
     ].slice(0, MAX_RESUMES));
     markResumeUsed(resume.name).catch(() => {});
+
+    // Resume isolation: update role & domain for the selected resume
+    if (resume?.text) {
+      let matchedAnalysis = null;
+      try {
+        const parsed = getStoredLastAnalysis();
+        if (
+          parsed?.resumeText &&
+          getResumeFingerprint(resume.text) === getResumeFingerprint(parsed.resumeText)
+        ) {
+          matchedAnalysis = parsed;
+        }
+      } catch (_) {}
+
+      if (matchedAnalysis) {
+        const role = matchedAnalysis.jobMatch?.targetRole || matchedAnalysis.agentResults?.ats?.detectedRole;
+        const dom = matchedAnalysis.jobMatch?.targetDomain || matchedAnalysis.agentResults?.ats?.detectedDomain;
+        if (role) setRoleTitle(role);
+        if (dom) setTargetDomain(dom);
+      } else {
+        const detected = detectJobDomain('', resume.text);
+        if (detected?.domain) setTargetDomain(detected.domain);
+        if (detected?.role) setRoleTitle(detected.role);
+      }
+    }
   }, []);
 
   const handleDeleteResume = useCallback(
@@ -475,6 +597,12 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
       const updatedList = await loadSavedResumes();
       setSavedResumes(updatedList);
       setSelectedResume(record);
+
+      if (record?.text) {
+        const detected = detectJobDomain('', record.text);
+        if (detected?.domain) setTargetDomain(detected.domain);
+        if (detected?.role) setRoleTitle(detected.role);
+      }
     } catch (err) {
       console.error('Resume upload failed:', err);
       setUploadError(err?.message || 'Failed to process resume file.');
@@ -483,19 +611,28 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
     }
   }, []);
 
-  // Helper to retrieve latest Job Match / analysis context if available
+  // Helper to retrieve latest Job Match / analysis context if available for THIS resume
   const getJobContext = () => {
     try {
+      let contextStr = '';
+      if (targetDomain) {
+        contextStr += `Target Professional Domain: ${targetDomain}. `;
+      }
       const parsed = getStoredLastAnalysis();
-      if (parsed) {
+      const isSameResume = parsed?.resumeText && selectedResume?.text
+        ? getResumeFingerprint(selectedResume.text) === getResumeFingerprint(parsed.resumeText)
+        : false;
+
+      if (isSameResume && parsed) {
         if (parsed.jobMatch?.matchedSkills || parsed.jobMatch?.missingSkills) {
           const matched = (parsed.jobMatch.matchedSkills || []).slice(0, 5).join(', ');
           const missing = (parsed.jobMatch.missingSkills || []).slice(0, 5).join(', ');
-          return `Key matched skills: ${matched}. Target gaps / key focus areas: ${missing}.`;
+          contextStr += `Key matched skills: ${matched}. Target gaps / key focus areas: ${missing}.`;
         }
       }
+      return contextStr;
     } catch (_) {}
-    return '';
+    return targetDomain ? `Target Professional Domain: ${targetDomain}.` : '';
   };
 
   // 3. Start Mock Interview (Calls AI to generate Question 1)
@@ -528,9 +665,13 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
         totalQuestions,
         jobContext
       );
+      if (!q1 || !q1.question) {
+        throw new Error('Interview question could not be generated. Please try again.');
+      }
       setCurrentQuestion(q1.question);
       setCurrentCategory(q1.category || 'TECHNICAL');
       setCurrentInterviewerNote(q1.interviewerNote || 'Evaluating foundational technical competence.');
+      playInterviewStart();
     } catch (err) {
       console.error('Failed to start mock interview:', err);
       setErrorMsg(err?.message || 'Failed to start interview. Please check your network and try again.');
@@ -616,6 +757,7 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
       });
 
       setFinalReport(report);
+      playInterviewComplete();
 
       // Persist completed interview to localStorage under 'careerlens_mock_interviews'
       const sessionRecord = {
@@ -681,15 +823,31 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
     } catch (_) {}
   };
 
-  // Common role suggestions
-  const roleSuggestions = [
-    'Software Engineer',
-    'Frontend Developer',
-    'Backend Engineer',
-    'Full Stack Developer',
-    'AI / ML Engineer',
-    'Product Manager',
-  ];
+  // Domain-diverse role suggestions
+  const roleSuggestions = useMemo(() => {
+    const d = (targetDomain || '').toLowerCase();
+    if (d.includes('health') || d.includes('nurs') || d.includes('medic')) {
+      return ['Registered Nurse', 'Clinical Specialist', 'Nurse Practitioner', 'Healthcare Administrator', 'ICU Staff Nurse'];
+    }
+    if (d.includes('educat') || d.includes('teach')) {
+      return ['High School Teacher', 'Instructional Lead', 'Curriculum Specialist', 'Elementary Teacher', 'Academic Coordinator'];
+    }
+    if (d.includes('finan') || d.includes('account')) {
+      return ['Staff Accountant', 'Senior Auditor', 'Financial Analyst', 'Controller', 'Accounting Manager'];
+    }
+    if (d.includes('tech') || d.includes('soft') || d.includes('dev')) {
+      return ['Software Engineer', 'Full Stack Developer', 'Data Analyst', 'DevOps Engineer', 'AI / ML Engineer', 'Product Manager'];
+    }
+    // Diverse cross-domain default
+    return [
+      'Software Engineer',
+      'Registered Nurse',
+      'High School Teacher',
+      'Staff Accountant',
+      'Product Manager',
+      'Operations Specialist',
+    ];
+  }, [targetDomain]);
 
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto pb-16">
@@ -916,11 +1074,29 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
                   INTERVIEW FOCUS MODE
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'mixed', label: 'Mixed', icon: 'auto_awesome', desc: 'Balanced' },
-                    { id: 'technical', label: 'Technical', icon: 'code', desc: 'Deep Tech' },
-                    { id: 'behavioral', label: 'Behavioral', icon: 'psychology', desc: 'STAR / Fit' },
-                  ].map((item) => (
+                  {(() => {
+                    const dom = (targetDomain || '').toLowerCase();
+                    const isHealth = dom.includes('health') || dom.includes('nurs') || dom.includes('medic');
+                    const isEdu = dom.includes('educat') || dom.includes('teach');
+                    const isFin = dom.includes('finan') || dom.includes('account');
+                    const isTech = !targetDomain || dom.includes('tech') || dom.includes('soft') || dom.includes('dev');
+
+                    const depthOption = isHealth
+                      ? { id: 'technical', label: 'Clinical', icon: 'clinical_notes', desc: 'Clinical Practice' }
+                      : isEdu
+                      ? { id: 'technical', label: 'Pedagogy', icon: 'school', desc: 'Instructional' }
+                      : isFin
+                      ? { id: 'technical', label: 'Financial', icon: 'account_balance', desc: 'Accounting & Controls' }
+                      : !isTech
+                      ? { id: 'technical', label: 'Domain Depth', icon: 'psychology', desc: 'Core Domain' }
+                      : { id: 'technical', label: 'Technical', icon: 'code', desc: 'Deep Tech' };
+
+                    return [
+                      { id: 'mixed', label: 'Mixed', icon: 'auto_awesome', desc: 'Balanced' },
+                      depthOption,
+                      { id: 'behavioral', label: 'Behavioral', icon: 'psychology', desc: 'STAR / Fit' },
+                    ];
+                  })().map((item) => (
                     <button
                       key={item.id}
                       type="button"
@@ -1049,7 +1225,7 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
                 <span className="font-label-caps text-xs font-bold text-[#4F7DF3]">
                   QUESTION {currentQuestionIndex} OF {totalQuestions}
                 </span>
-                <CategoryBadge category={currentCategory} />
+                <CategoryBadge category={currentCategory} domain={targetDomain} />
                 <span className="text-xs text-[#71717A]">• {roleTitle}</span>
               </div>
               <div className="flex items-center gap-3">
@@ -1150,7 +1326,7 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
                 value={userAnswer}
                 onChange={(e) => setUserAnswer(e.target.value)}
                 disabled={isTurnSubmitting}
-                placeholder="Type your structured answer here. Speak as if talking directly to the hiring manager. For technical questions, mention trade-offs and decisions; for behavioral, use the STAR format (Situation, Task, Action, Result)..."
+                placeholder={getAnswerPlaceholder(targetDomain, currentCategory)}
                 className="w-full bg-[#111318] border border-[#27272A] rounded-xl p-4 text-xs text-[#FAFAFA] placeholder-[#52525B] focus:border-[#4F7DF3] focus:outline-none transition-colors resize-y leading-relaxed font-sans"
               />
 
@@ -1243,12 +1419,30 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
 
                 {/* Dimension Breakdown Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
-                  {[
-                    { label: 'Technical Knowledge', score: finalReport.technicalKnowledge, color: '#3b82f6' },
-                    { label: 'Problem Solving', score: finalReport.problemSolving, color: '#8b5cf6' },
-                    { label: 'Communication', score: finalReport.communication, color: '#22C55E' },
-                    { label: 'Answer Quality', score: finalReport.answerQuality, color: '#F59E0B' },
-                  ].map((dim) => (
+                  {(() => {
+                    const dom = (targetDomain || '').toLowerCase();
+                    const isHealth = dom.includes('health') || dom.includes('nurs') || dom.includes('medic');
+                    const isEdu = dom.includes('educat') || dom.includes('teach');
+                    const isFin = dom.includes('finan') || dom.includes('account');
+                    const isTech = !targetDomain || dom.includes('tech') || dom.includes('soft') || dom.includes('dev');
+
+                    const techKnowledgeLabel = isHealth
+                      ? 'Clinical Knowledge'
+                      : isEdu
+                      ? 'Pedagogy Knowledge'
+                      : isFin
+                      ? 'Financial Knowledge'
+                      : !isTech
+                      ? 'Domain Depth'
+                      : 'Technical Knowledge';
+
+                    return [
+                      { label: techKnowledgeLabel, score: finalReport.technicalKnowledge, color: '#3b82f6' },
+                      { label: 'Problem Solving', score: finalReport.problemSolving, color: '#8b5cf6' },
+                      { label: 'Communication', score: finalReport.communication, color: '#22C55E' },
+                      { label: 'Answer Quality', score: finalReport.answerQuality, color: '#F59E0B' },
+                    ];
+                  })().map((dim) => (
                     <div key={dim.label} className="bg-[#111318] rounded-xl p-4 border border-[#27272A]">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[11px] font-medium text-[#A1A1AA]">{dim.label}</span>
@@ -1362,7 +1556,7 @@ export default function MockInterviewSection({ onViewKit, initialSession }) {
                             <span className="font-label-caps text-[10px] text-[#4F7DF3] font-bold">
                               QUESTION {i + 1}
                             </span>
-                            <CategoryBadge category={turn.category} />
+                            <CategoryBadge category={turn.category} domain={targetDomain} />
                           </div>
                           <p className="text-sm font-semibold text-[#FAFAFA] leading-snug">
                             {turn.question}

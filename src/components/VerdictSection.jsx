@@ -119,7 +119,11 @@ export default function ResultSection({ recommendation, onNew, agentResults, dee
     if (interviewData) { setIsPreparing(true); return; }
     setInterviewStatus('loading');
     try {
-      const result = await generateInterviewQuestions(resumeText, jobDescription, companyMode);
+      const context = {
+        role: agentResults?.ats?.detectedRole,
+        domain: agentResults?.ats?.detectedDomain,
+      };
+      const result = await generateInterviewQuestions(resumeText, jobDescription, companyMode, context);
       setInterviewData(result);
       setInterviewStatus('complete');
       setIsPreparing(true);

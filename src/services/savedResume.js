@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
-import { auth } from './firebase';
+import { auth } from './firebase.js';
+import { getResumeFingerprint } from './userStorage.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
@@ -97,14 +98,17 @@ const isValidRecord = (record) =>
   typeof record.text === 'string' &&
   record.text.trim().length > 0;
 
-function normalizeRecord(entry, uid) {
+export function normalizeRecord(entry, uid) {
   const now = Date.now();
+  const text = typeof entry.text === 'string' ? entry.text : '';
+  const fingerprint = entry.id || (text ? getResumeFingerprint(text) : `res_${now}`);
   return {
+    id: fingerprint,
     name: entry.name,
     type: typeof entry.type === 'string' ? entry.type : '',
     size: typeof entry.size === 'number' ? entry.size : 0,
     lastModified: typeof entry.lastModified === 'number' ? entry.lastModified : 0,
-    text: entry.text,
+    text,
     file: entry.file || null,
     savedAt: typeof entry.savedAt === 'number' ? entry.savedAt : now,
     lastUsedAt:
@@ -192,7 +196,8 @@ export async function saveResume(entry, explicitUid) {
       { ...entry, userId: uid, savedAt: Date.now(), lastUsedAt: Date.now() },
       uid
     );
-    const rest = current.filter((r) => r.name !== record.name);
+    // Filter out old records that either share the exact same content ID or same filename
+    const rest = current.filter((r) => r.id !== record.id && r.name !== record.name);
     await writeRecords([record, ...rest].slice(0, MAX_RESUMES), userKey);
     return true;
   } catch {
@@ -202,20 +207,20 @@ export async function saveResume(entry, explicitUid) {
 
 /**
  * Mark a saved resume as the one just used for current user.
- * @param {string} name
+ * @param {string} identifier - Resume name or id
  * @param {string} [explicitUid]
  * @returns {Promise<boolean>}
  */
-export async function markResumeUsed(name, explicitUid) {
-  if (!isSupported() || !name) return false;
+export async function markResumeUsed(identifier, explicitUid) {
+  if (!isSupported() || !identifier) return false;
   const uid = resolveUid(explicitUid);
   const userKey = getUserStoreKey(uid);
 
   try {
     const current = await loadSavedResumes(uid);
-    const entry = current.find((r) => r.name === name);
+    const entry = current.find((r) => r.id === identifier || r.name === identifier);
     if (!entry) return false;
-    const rest = current.filter((r) => r.name !== name);
+    const rest = current.filter((r) => (entry.id ? r.id !== entry.id : r.name !== entry.name));
     await writeRecords(
       [normalizeRecord({ ...entry, lastUsedAt: Date.now() }, uid), ...rest],
       userKey
@@ -227,24 +232,24 @@ export async function markResumeUsed(name, explicitUid) {
 }
 
 /**
- * Remove a saved resume by filename for the current user.
- * @param {string} [name]
+ * Remove a saved resume by filename or id for the current user.
+ * @param {string} [identifier] - Resume name or id
  * @param {string} [explicitUid]
  * @returns {Promise<boolean>}
  */
-export async function removeSavedResume(name, explicitUid) {
+export async function removeSavedResume(identifier, explicitUid) {
   if (!isSupported()) return false;
   const uid = resolveUid(explicitUid);
   const userKey = getUserStoreKey(uid);
 
   try {
     const current = await loadSavedResumes(uid);
-    if (!name) {
+    if (!identifier) {
       if (current.length === 0) return false;
       await writeRecords([], userKey);
       return true;
     }
-    const next = current.filter((r) => r.name !== name);
+    const next = current.filter((r) => r.id !== identifier && r.name !== identifier);
     if (next.length === current.length) return false;
     await writeRecords(next, userKey);
     return true;

@@ -76,17 +76,17 @@ export default function Sidebar({ activeTab, setActiveTab }) {
           <span className="text-xs font-semibold tracking-wider">Career Navigator</span>
         </button>
 
-        <button className={getTabClass('ARCHIVES')} onClick={() => setActiveTab && setActiveTab('ARCHIVES')}>
-          <span className="material-symbols-outlined text-[18px]">history</span>
-          <span className="text-xs font-semibold tracking-wider">History</span>
-        </button>
-
         <button className={getTabClass('EVIDENCE')} onClick={() => setActiveTab && setActiveTab('EVIDENCE')}>
           <span
             className="material-symbols-outlined text-[18px]"
             style={{ fontVariationSettings: activeTab === 'EVIDENCE' ? "'FILL' 1" : "'FILL' 0" }}
           >record_voice_over</span>
           <span className="text-xs font-semibold tracking-wider">Mock Interview</span>
+        </button>
+
+        <button className={getTabClass('ARCHIVES')} onClick={() => setActiveTab && setActiveTab('ARCHIVES')}>
+          <span className="material-symbols-outlined text-[18px]">history</span>
+          <span className="text-xs font-semibold tracking-wider">History</span>
         </button>
 
         <button className={getTabClass('CHAMBERS')} onClick={() => setActiveTab && setActiveTab('CHAMBERS')}>

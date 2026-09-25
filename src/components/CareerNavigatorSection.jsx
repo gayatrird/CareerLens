@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { loadSavedResumes, markResumeUsed, saveResume, removeSavedResume, parseResumeFile, MAX_RESUMES } from "../services/savedResume";
 import { generateCareerNavigator } from "../services/hiringApi";
-import { getStoredNavigator, setStoredNavigator, getStoredLastAnalysis } from "../services/userStorage";
+import { getStoredNavigator, setStoredNavigator, getStoredLastAnalysis, getResumeFingerprint } from "../services/userStorage";
+import { detectJobDomain } from "../services/jobMatch";
+import { playNavigatorComplete, playActionConfirm } from "../utils/audio";
 
 // ─── Cache Helpers (User-scoped via userStorage) ──────────────────────────────
 
@@ -148,10 +150,12 @@ function ResumeSelector({
   }
 
   const activeResume =
-    (selectedResume && savedResumes.find((r) => r.name === selectedResume.name)) ||
+    (selectedResume && savedResumes.find((r) => (r.id && selectedResume.id ? r.id === selectedResume.id : (r.text && selectedResume.text ? r.text === selectedResume.text : r.name === selectedResume.name)))) ||
     savedResumes[0];
 
-  const otherResumes = savedResumes.filter((r) => r.name !== activeResume.name);
+  const otherResumes = savedResumes.filter((r) =>
+    activeResume ? (r.id && activeResume.id ? r.id !== activeResume.id : (r.text && activeResume.text ? r.text !== activeResume.text : r.name !== activeResume.name)) : true
+  );
 
   return (
     <div className="flex flex-col gap-2 mb-6 animate-fade-in-up">
@@ -159,8 +163,15 @@ function ResumeSelector({
 
       {/* Saved resumes — compact selector: last used shown, others in a dropdown */}
       <div className="rounded-xl border border-[#27272A] bg-[#111318] overflow-hidden">
-        {/* Current (selected / last used) resume */}
-        <div className="px-3.5 py-2.5">
+        {/* Current (selected / last used) resume — entire row is clickable */}
+        <div
+          className="px-3.5 py-2.5 cursor-pointer hover:bg-[#4F7DF3]/5 transition-colors"
+          onClick={() => {
+            if (!isUploading) {
+              onSelect(activeResume);
+            }
+          }}
+        >
           <div className="flex items-center gap-2 min-w-0">
             <span
               className="material-symbols-outlined text-[#22C55E] text-[15px] shrink-0"
@@ -177,9 +188,12 @@ function ResumeSelector({
             {(dropdownOpen || savedResumes.length === 1) && onDelete && (
               <button
                 type="button"
-                onClick={() => onDelete(activeResume.name)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(activeResume.id || activeResume.name);
+                }}
                 disabled={isUploading}
-                className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5"
+                className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5 cursor-pointer"
                 title="Remove saved resume"
                 aria-label={`Remove ${activeResume.name}`}
               >
@@ -189,9 +203,12 @@ function ResumeSelector({
             {savedResumes.length > 1 && (
               <button
                 type="button"
-                onClick={() => setDropdownOpen((v) => !v)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDropdownOpen((v) => !v);
+                }}
                 disabled={isUploading}
-                className="text-[#71717A] hover:text-[#FAFAFA] transition-colors shrink-0 p-0.5"
+                className="text-[#71717A] hover:text-[#FAFAFA] transition-colors shrink-0 p-0.5 cursor-pointer"
                 title={dropdownOpen ? "Hide other saved resumes" : "Show other saved resumes"}
                 aria-label={dropdownOpen ? "Hide other saved resumes" : "Show other saved resumes"}
               >
@@ -205,21 +222,10 @@ function ResumeSelector({
               </button>
             )}
           </div>
-          <div className="flex items-center justify-between gap-3 mt-1.5">
+          <div className="flex items-center gap-3 mt-1.5">
             <p className="text-[10px] text-[#52525B] truncate">
               Last used • {lastUsedLabel(activeResume.lastUsedAt)}
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                onSelect(activeResume);
-                setDropdownOpen(false);
-              }}
-              disabled={isUploading}
-              className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide bg-[#4F7DF3] text-white hover:bg-[#436FE3] transition-all duration-200 disabled:opacity-50 shrink-0"
-            >
-              Use
-            </button>
           </div>
         </div>
 
@@ -228,8 +234,14 @@ function ResumeSelector({
           <div className="border-t border-[#27272A]">
             {otherResumes.map((r) => (
               <div
-                key={r.name}
-                className="flex items-center gap-2 px-3.5 py-2 border-b border-[#27272A]/70 last:border-b-0 hover:bg-[#09090B]/60 transition-colors"
+                key={r.id || `${r.name}_${r.lastUsedAt || ""}`}
+                className="flex items-center gap-2 px-3.5 py-2 border-b border-[#27272A]/70 last:border-b-0 hover:bg-[#4F7DF3]/5 transition-colors cursor-pointer"
+                onClick={() => {
+                  if (!isUploading) {
+                    onSelect(r);
+                    setDropdownOpen(false);
+                  }
+                }}
               >
                 <span className="material-symbols-outlined text-[#3F3F46] text-[14px] shrink-0">
                   radio_button_unchecked
@@ -240,33 +252,28 @@ function ResumeSelector({
                 {onDelete && (
                   <button
                     type="button"
-                    onClick={() => onDelete(r.name)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(r.id || r.name);
+                    }}
                     disabled={isUploading}
-                    className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5"
+                    className="text-[#3F3F46] hover:text-[#EF4444] transition-colors shrink-0 p-0.5 cursor-pointer"
                     title="Remove saved resume"
                     aria-label={`Remove ${r.name}`}
                   >
                     <span className="material-symbols-outlined text-[14px]">delete</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelect(r);
-                    setDropdownOpen(false);
-                  }}
-                  disabled={isUploading}
-                  className="px-2.5 py-1 rounded-md text-[10px] font-semibold tracking-wide border border-[#27272A] bg-[#09090B] text-[#A1A1AA] hover:text-[#FAFAFA] hover:border-[#3F3F46] transition-all duration-200 disabled:opacity-50 shrink-0"
-                >
-                  Use
-                </button>
               </div>
             ))}
             <div className="px-3.5 py-2 border-t border-[#27272A] flex items-center gap-2">
               <span className="material-symbols-outlined text-[#4F7DF3] text-[14px] shrink-0">add</span>
               <button
                 type="button"
-                onClick={onUploadClick}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUploadClick();
+                }}
                 disabled={isUploading}
                 className="text-[11px] font-medium text-[#4F7DF3] hover:text-[#5B8CFF] transition-colors cursor-pointer"
               >
@@ -567,6 +574,7 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
   const [isDone, setIsDone] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const activeRequestIdRef = useRef(0);
   const fileInputRef = useRef(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -590,7 +598,7 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
       if (initialResume && initialResume.text) {
         autoResume = initialResume;
       } else if (resumes && resumes.length > 0) {
-        autoResume = { name: resumes[0].name, text: resumes[0].text, lastUsedAt: resumes[0].lastUsedAt };
+        autoResume = resumes[0];
       } else if (analysis && analysis.resumeText) {
         autoResume = { name: "Last Analysis Resume", text: analysis.resumeText };
       }
@@ -606,37 +614,130 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
     return () => { cancelled = true; };
   }, [initialResume]);
 
+  const executeGeneration = useCallback(async (resumeToRun, reqId) => {
+    if (!resumeToRun?.text) return;
+    setStatus("loading");
+    setResult(null);
+    setIsDone(false);
+    setErrorMsg("");
+
+    try {
+      const context = {};
+      const detected = detectJobDomain("", resumeToRun.text);
+      if (detected?.domain) context.targetDomain = detected.domain;
+      if (detected?.role)   context.targetRole   = detected.role;
+
+      // DO NOT USE PREVIOUS ANALYSIS AS THE SOURCE
+      // Only attach previous analysis if it strictly matches this exact resume's content fingerprint
+      if (latestAnalysis?.resumeText && resumeToRun?.text) {
+        const isSameResume = getResumeFingerprint(resumeToRun.text) === getResumeFingerprint(latestAnalysis.resumeText);
+
+        if (isSameResume) {
+          if (latestAnalysis.agentResults)   context.agentResults   = latestAnalysis.agentResults;
+          if (latestAnalysis.recommendation) context.recommendation = latestAnalysis.recommendation;
+          if (latestAnalysis.jobMatch)       context.jobMatch       = latestAnalysis.jobMatch;
+          if (latestAnalysis.jobDescription) context.jobDescription = latestAnalysis.jobDescription;
+          if (latestAnalysis.jobMatch?.targetRole)   context.targetRole   = latestAnalysis.jobMatch.targetRole;
+          if (latestAnalysis.jobMatch?.targetDomain) context.targetDomain = latestAnalysis.jobMatch.targetDomain;
+        }
+      }
+
+      const data = await generateCareerNavigator(resumeToRun.text, context);
+
+      if (activeRequestIdRef.current !== reqId) return;
+
+      setIsDone(true);
+      playNavigatorComplete();
+      await new Promise((res) => setTimeout(res, 350));
+
+      if (activeRequestIdRef.current !== reqId) return;
+
+      setResult(data);
+      writeCache(resumeToRun.text, data);
+      setStatus("idle");
+      setIsDone(false);
+    } catch (err) {
+      if (activeRequestIdRef.current !== reqId) return;
+      setIsDone(false);
+      console.error("Career Navigator generation failed:", err);
+      const msg = err?.message || "An unknown error occurred.";
+      const isRateLimit = msg.includes("429") || msg.includes("RATE_LIMIT_EXCEEDED");
+      setErrorMsg(
+        isRateLimit
+          ? "Groq is rate-limited right now. Please wait a moment and try again."
+          : `Generation failed: ${msg}`
+      );
+      setStatus("error");
+    }
+  }, [latestAnalysis]);
+
   const handleSelectResume = useCallback((resume) => {
-    setSelectedResume(resume);
+    if (!resume) return;
+
+    // Resolve full record from savedResumes to ensure complete content is available
+    const record = savedResumes.find((r) =>
+      (resume.id && r.id ? r.id === resume.id : (resume.text && r.text ? r.text === resume.text : r.name === resume.name))
+    ) || resume;
+
+    // If this exact resume is already active and currently loaded or loading, do not restart
+    const isAlreadyActive = selectedResume && (
+      (record.id && selectedResume.id ? record.id === selectedResume.id : false) ||
+      (record.text && selectedResume.text ? record.text === selectedResume.text : false) ||
+      (record.name === selectedResume.name)
+    );
+
+    if (isAlreadyActive && (result || status === "loading")) {
+      return;
+    }
+
+    const reqId = ++activeRequestIdRef.current;
+    setSelectedResume(record);
     setResult(null);
     setErrorMsg("");
     setUploadError("");
     setUploadNotice("");
     setStatus("idle");
     setIsDone(false);
-    const cached = readCache(resume.text);
-    if (cached) setResult(cached);
-    setSavedResumes((prev) => [
-      { ...resume, lastUsedAt: Date.now() },
-      ...prev.filter((r) => r.name !== resume.name),
-    ].slice(0, MAX_RESUMES));
-    markResumeUsed(resume.name).catch(() => {});
-  }, []);
 
-  const handleDeleteResume = useCallback(async (name) => {
+    // Update MRU ordering
+    setSavedResumes((prev) => [
+      { ...record, lastUsedAt: Date.now() },
+      ...prev.filter((r) => (r.id && record.id ? r.id !== record.id : (r.text && record.text ? r.text !== record.text : r.name !== record.name))),
+    ].slice(0, MAX_RESUMES));
+    markResumeUsed(record.id || record.name).catch(() => {});
+
+    // Check cache for this exact resume
+    const cached = record.text ? readCache(record.text) : null;
+    if (cached) {
+      setResult(cached);
+      setStatus("idle");
+    } else if (record.text && record.text.trim().length >= 20) {
+      // IF NOT CACHED:
+      // Clear previous result immediately, show loading, and generate fresh result
+      executeGeneration(record, reqId);
+    }
+  }, [savedResumes, selectedResume, result, status, executeGeneration]);
+
+  const handleDeleteResume = useCallback(async (identifier) => {
     try {
-      await removeSavedResume(name);
+      activeRequestIdRef.current++;
+      await removeSavedResume(identifier);
       const updatedList = await loadSavedResumes().catch(() => []);
       const validList = Array.isArray(updatedList) ? updatedList : [];
       setSavedResumes(validList);
-      if (selectedResume?.name === name) {
+      if (selectedResume?.name === identifier || selectedResume?.id === identifier) {
         if (validList.length > 0) {
-          setSelectedResume(validList[0]);
-          const cached = readCache(validList[0].text);
+          const next = validList[0];
+          setSelectedResume(next);
+          const cached = readCache(next.text);
           setResult(cached || null);
+          setStatus("idle");
+          setErrorMsg("");
         } else {
           setSelectedResume(null);
           setResult(null);
+          setStatus("idle");
+          setErrorMsg("");
         }
       }
     } catch (err) {
@@ -657,9 +758,13 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
     const file = e.target?.files?.[0];
     if (!file) return;
 
+    const reqId = ++activeRequestIdRef.current;
     setIsUploading(true);
     setUploadError("");
     setUploadNotice("");
+    setResult(null);
+    setStatus("idle");
+    setErrorMsg("");
 
     try {
       // 1. Extract text using shared parser
@@ -667,7 +772,7 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
 
       // 2. Check maximum limit of 5 saved resumes
       const currentSaved = await loadSavedResumes();
-      const isExisting = currentSaved.some((r) => r.name === record.name);
+      const isExisting = currentSaved.some((r) => (record.id && r.id ? r.id === record.id : r.name === record.name));
       if (!isExisting && currentSaved.length >= MAX_RESUMES) {
         setUploadNotice(`Storage limit reached (${MAX_RESUMES} max). Oldest resume was replaced.`);
       }
@@ -681,53 +786,31 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
 
       // 5. Automatically make newly uploaded resume active & selected
       setSelectedResume(record);
+      playActionConfirm();
 
       // 6. Reset or check cache for this newly uploaded resume
       const cached = readCache(record.text);
-      setResult(cached);
-      setStatus("idle");
-      setErrorMsg("");
+      if (cached) {
+        setResult(cached);
+        setStatus("idle");
+      } else {
+        // Automatically generate fresh result for new resume
+        executeGeneration(record, reqId);
+      }
     } catch (err) {
       console.error("Resume upload failed:", err);
       setUploadError(err?.message || "Failed to process resume file. Please check the file format.");
+      setStatus("idle");
     } finally {
       setIsUploading(false);
     }
-  }, []);
+  }, [executeGeneration]);
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(() => {
     if (!selectedResume?.text) return;
-    setStatus("loading");
-    setIsDone(false);
-    setErrorMsg("");
-    try {
-      const context = {};
-      if (latestAnalysis) {
-        if (latestAnalysis.agentResults)   context.agentResults   = latestAnalysis.agentResults;
-        if (latestAnalysis.recommendation) context.recommendation = latestAnalysis.recommendation;
-        if (latestAnalysis.jobMatch)       context.jobMatch       = latestAnalysis.jobMatch;
-        if (latestAnalysis.jobDescription) context.jobDescription = latestAnalysis.jobDescription;
-      }
-      const data = await generateCareerNavigator(selectedResume.text, context);
-      setIsDone(true);
-      await new Promise((res) => setTimeout(res, 350));
-      setResult(data);
-      writeCache(selectedResume.text, data);
-      setStatus("idle");
-      setIsDone(false);
-    } catch (err) {
-      setIsDone(false);
-      console.error("Career Navigator generation failed:", err);
-      const msg = err?.message || "An unknown error occurred.";
-      const isRateLimit = msg.includes("429") || msg.includes("RATE_LIMIT_EXCEEDED");
-      setErrorMsg(
-        isRateLimit
-          ? "Groq is rate-limited right now. Please wait a moment and try again."
-          : `Generation failed: ${msg}`
-      );
-      setStatus("error");
-    }
-  }, [selectedResume, latestAnalysis]);
+    const reqId = ++activeRequestIdRef.current;
+    executeGeneration(selectedResume, reqId);
+  }, [selectedResume, executeGeneration]);
 
   const hasResume = Boolean(
     savedResumes.length > 0 ||
@@ -763,6 +846,13 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
     );
   }
 
+  const activeDomain = result?.targetDomain || (
+    selectedResume?.text ? detectJobDomain("", selectedResume.text).domain : (latestAnalysis?.jobMatch?.targetDomain || latestAnalysis?.agentResults?.ats?.detectedDomain)
+  );
+  const activeRole = result?.targetRole || (
+    selectedResume?.text ? detectJobDomain("", selectedResume.text).role : (latestAnalysis?.jobMatch?.targetRole || latestAnalysis?.agentResults?.ats?.detectedRole)
+  );
+
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto pb-16">
       <input
@@ -778,6 +868,22 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
         <span className="font-label-caps text-[#4F7DF3] text-[10px] tracking-[0.25em] uppercase font-bold">AI-POWERED</span>
         <h1 className="font-headline-md text-2xl md:text-3xl text-[#FAFAFA] tracking-tight mt-1 font-bold">Career Navigator</h1>
         <p className="text-[#71717A] text-sm mt-2">Your personalized career direction</p>
+        {(activeDomain || activeRole) && (
+          <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+            {activeDomain && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#4F7DF3]/30 bg-[#4F7DF3]/10 text-[#4F7DF3] text-xs font-medium">
+                <span className="material-symbols-outlined text-[14px]">domain</span>
+                {activeDomain}
+              </span>
+            )}
+            {activeRole && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-[#27272A] bg-[#111318] text-[#A1A1AA] text-xs font-medium">
+                <span className="material-symbols-outlined text-[14px]">work</span>
+                {activeRole}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Resume Selector */}
@@ -836,7 +942,7 @@ export default function CareerNavigatorSection({ onNavigateToAnalyze, initialRes
       )}
 
       {/* Results */}
-      {result && (
+      {result && status !== "loading" && (
         <div className="space-y-6 animate-fade-in-up">
 
           {/* Section 1 — Career Summary */}

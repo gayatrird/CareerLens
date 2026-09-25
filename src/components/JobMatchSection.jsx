@@ -100,19 +100,52 @@ function RequirementGroup({ config, items }) {
   );
 }
 
-const SUB_SCORES = [
-  { key: 'atsCompatibility', label: 'ATS Compatibility', color: '#3b82f6', icon: 'manage_search' },
-  { key: 'skillsMatch',      label: 'Skills Match',      color: '#22C55E', icon: 'rule' },
-  { key: 'experienceMatch',  label: 'Experience Match',  color: '#8b5cf6', icon: 'work_history' },
-  { key: 'technicalMatch',   label: 'Technical Match',   color: '#10b981', icon: 'code' },
-];
-
-const REQUIREMENT_GROUPS = [
-  { key: 'technicalSkills',        label: 'TECHNICAL SKILLS',         color: '#3b82f6', icon: 'memory',         empty: 'No technical skills required' },
-  { key: 'responsibilities',       label: 'RESPONSIBILITIES',         color: '#8b5cf6', icon: 'checklist',      empty: 'No responsibilities listed' },
-  { key: 'experienceRequirements', label: 'EXPERIENCE / ELIGIBILITY', color: '#F59E0B', icon: 'work_history',   empty: 'No experience or eligibility requirements' },
-  { key: 'softSkills',             label: 'SOFT SKILLS',              color: '#22C55E', icon: 'diversity_3',    empty: 'No soft skills listed' },
-];
+function getDomainLabels(targetDomain) {
+  const d = (targetDomain || '').toLowerCase();
+  if (d.includes('health') || d.includes('nurs') || d.includes('medic')) {
+    return {
+      subScoreLabel: 'Clinical Depth',
+      subScoreIcon: 'clinical_notes',
+      reqLabel: 'CLINICAL & CORE SKILLS',
+      reqIcon: 'medical_services',
+      reqEmpty: 'No clinical or specialized skills required',
+    };
+  }
+  if (d.includes('educat') || d.includes('teach')) {
+    return {
+      subScoreLabel: 'Pedagogy / Domain Depth',
+      subScoreIcon: 'school',
+      reqLabel: 'INSTRUCTIONAL & CORE SKILLS',
+      reqIcon: 'school',
+      reqEmpty: 'No instructional or pedagogical skills required',
+    };
+  }
+  if (d.includes('finan') || d.includes('account')) {
+    return {
+      subScoreLabel: 'Financial / Domain Depth',
+      subScoreIcon: 'account_balance',
+      reqLabel: 'FINANCIAL & CORE SKILLS',
+      reqIcon: 'account_balance',
+      reqEmpty: 'No financial or accounting skills required',
+    };
+  }
+  if (d.includes('tech') || d.includes('soft') || d.includes('dev')) {
+    return {
+      subScoreLabel: 'Technical Match',
+      subScoreIcon: 'code',
+      reqLabel: 'TECHNICAL SKILLS',
+      reqIcon: 'memory',
+      reqEmpty: 'No technical skills required',
+    };
+  }
+  return {
+    subScoreLabel: 'Domain Depth',
+    subScoreIcon: 'psychology',
+    reqLabel: 'CORE DOMAIN SKILLS',
+    reqIcon: 'psychology',
+    reqEmpty: 'No core domain skills required',
+  };
+}
 
 export default function JobMatchSection({ jobMatch }) {
   const overall = Number(jobMatch?.overallMatch) || 0;
@@ -148,7 +181,25 @@ export default function JobMatchSection({ jobMatch }) {
     requirementBreakdown = {},
     topGaps = [],
     recommendations = [],
+    targetRole = '',
+    targetDomain = '',
   } = jobMatch;
+
+  const domainLabels = getDomainLabels(targetDomain);
+
+  const subScores = [
+    { key: 'atsCompatibility', label: 'ATS Compatibility', color: '#3b82f6', icon: 'manage_search', val: Number(jobMatch.atsCompatibility) || 0 },
+    { key: 'skillsMatch',      label: 'Skills Match',      color: '#22C55E', icon: 'rule', val: Number(jobMatch.skillsMatch) || 0 },
+    { key: 'experienceMatch',  label: 'Experience Match',  color: '#8b5cf6', icon: 'work_history', val: Number(jobMatch.experienceMatch) || 0 },
+    { key: 'domainDepthMatch', label: domainLabels.subScoreLabel, color: '#10b981', icon: domainLabels.subScoreIcon, val: Number(jobMatch.domainDepthMatch ?? jobMatch.technicalMatch) || 0 },
+  ];
+
+  const requirementGroups = [
+    { key: 'technicalSkills',        label: domainLabels.reqLabel,      color: '#3b82f6', icon: domainLabels.reqIcon, empty: domainLabels.reqEmpty },
+    { key: 'responsibilities',       label: 'RESPONSIBILITIES',         color: '#8b5cf6', icon: 'checklist',          empty: 'No responsibilities listed' },
+    { key: 'experienceRequirements', label: 'EXPERIENCE / ELIGIBILITY', color: '#F59E0B', icon: 'work_history',       empty: 'No experience or eligibility requirements' },
+    { key: 'softSkills',             label: 'SOFT SKILLS',              color: '#22C55E', icon: 'diversity_3',        empty: 'No soft skills listed' },
+  ];
 
   return (
     <section className="max-w-5xl mx-auto mb-20">
@@ -157,18 +208,32 @@ export default function JobMatchSection({ jobMatch }) {
         <div className="h-px w-full bg-gradient-to-r from-transparent via-[#5B8CFF]/50 to-transparent"></div>
 
         {/* Header */}
-        <div className="bg-[#09090B]/60 py-5 px-8 border-b border-[#27272A] flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="bg-[#09090B]/60 py-5 px-8 border-b border-[#27272A] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#5B8CFF]/15 border border-[#5B8CFF]/25 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-[#5B8CFF]/15 border border-[#5B8CFF]/25 flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-[#5B8CFF] text-[16px]" style={{ fontVariationSettings: "'FILL' 1" }}>compare_arrows</span>
             </div>
             <div>
-              <span className="font-semibold text-[#FAFAFA] text-base tracking-tight">Job Match Analysis</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-[#FAFAFA] text-base tracking-tight">Job Match Analysis</span>
+                {targetDomain && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-label-caps tracking-wider border border-[#5B8CFF]/30 bg-[#5B8CFF]/10 text-[#5B8CFF]">
+                    <span className="material-symbols-outlined text-[12px]">domain</span>
+                    {targetDomain}
+                  </span>
+                )}
+                {targetRole && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium border border-[#27272A] bg-[#111318] text-[#A1A1AA]">
+                    <span className="material-symbols-outlined text-[12px]">work</span>
+                    {targetRole}
+                  </span>
+                )}
+              </div>
               <p className="text-[10px] font-label-caps text-[#52525B] tracking-widest mt-0.5">FINAL RESUME ↔ JOB MATCH REPORT</p>
             </div>
           </div>
           <span
-            className="font-label-caps text-[11px] tracking-widest px-4 py-1.5 rounded-full border"
+            className="font-label-caps text-[11px] tracking-widest px-4 py-1.5 rounded-full border shrink-0"
             style={{ color: tone.color, backgroundColor: `${tone.color}12`, borderColor: `${tone.color}30` }}
           >
             {tone.label} · {overall}%
@@ -213,21 +278,18 @@ export default function JobMatchSection({ jobMatch }) {
             <div className="lg:col-span-8">
               <BlockTitle icon="speed" label="MATCH BREAKDOWN" />
               <div className="space-y-4 bg-[#09090B] border border-[#27272A] rounded-xl p-5">
-                {SUB_SCORES.map(({ key, label, color }) => {
-                  const value = Number(jobMatch[key]) || 0;
-                  return (
-                    <div key={key} className="flex items-center gap-3">
-                      <span className="w-32 shrink-0 text-[10px] font-label-caps text-[#52525B] uppercase tracking-widest">{label}</span>
-                      <div className="flex-1 h-1 bg-[#27272A] rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full animate-score"
-                          style={{ width: `${value}%`, backgroundColor: color, boxShadow: `0 0 6px ${color}60` }}
-                        />
-                      </div>
-                      <span className="w-8 text-right text-xs font-bold" style={{ color }}>{value}</span>
+                {subScores.map(({ key, label, color, val }) => (
+                  <div key={key} className="flex items-center gap-3">
+                    <span className="w-40 shrink-0 text-[10px] font-label-caps text-[#52525B] uppercase tracking-widest truncate" title={label}>{label}</span>
+                    <div className="flex-1 h-1 bg-[#27272A] rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full animate-score"
+                        style={{ width: `${val}%`, backgroundColor: color, boxShadow: `0 0 6px ${color}60` }}
+                      />
                     </div>
-                  );
-                })}
+                    <span className="w-8 text-right text-xs font-bold" style={{ color }}>{val}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -246,7 +308,7 @@ export default function JobMatchSection({ jobMatch }) {
           <div>
             <BlockTitle icon="account_tree" label="REQUIREMENT BREAKDOWN" color="#8b5cf6" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {REQUIREMENT_GROUPS.map((config) => (
+              {requirementGroups.map((config) => (
                 <RequirementGroup key={config.key} config={config} items={requirementBreakdown[config.key]} />
               ))}
             </div>

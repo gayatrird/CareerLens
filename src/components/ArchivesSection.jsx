@@ -7,6 +7,7 @@ import {
   getStoredLastAnalysis,
 } from '../services/userStorage';
 import { loadSavedResumes } from '../services/savedResume';
+import { playActionConfirm } from '../utils/audio';
 
 // ─── Score & Match Helpers ───────────────────────────────────────────────────
 
@@ -203,6 +204,7 @@ export default function HistorySection({
       const score = item.jobMatch?.overallScore ?? item.recommendation?.overallMatch ?? item.agentResults?.ats?.score ?? 0;
       const ts = item.date ? new Date(item.date).getTime() : 0;
       const role = item.jobMatch?.targetRole || item.topic || 'Resume Analysis';
+      const domain = item.jobMatch?.targetDomain || item.agentResults?.ats?.detectedDomain || null;
       const company = item.companyMode && item.companyMode !== 'general'
         ? item.companyMode.charAt(0).toUpperCase() + item.companyMode.slice(1)
         : 'General';
@@ -218,6 +220,7 @@ export default function HistorySection({
         title: role,
         subtitle: `Target Company: ${company}`,
         company,
+        domain,
         dateFormatted: formatDate(item.date) || 'Recorded Analysis',
         timestamp: ts,
         hasRealTimestamp: Boolean(item.date && !isNaN(ts) && ts > 0),
@@ -232,6 +235,7 @@ export default function HistorySection({
       const score = item.finalReport?.overallScore ?? 0;
       const ts = item.completionDate ? new Date(item.completionDate).getTime() : 0;
       const role = item.roleTitle || 'Mock Interview';
+      const domain = item.targetDomain || item.domain || null;
       const company = item.company || 'General';
 
       list.push({
@@ -245,6 +249,7 @@ export default function HistorySection({
         title: role,
         subtitle: `${item.totalQuestions || item.turns?.length || 0} Questions • ${(item.mode || 'MIXED').toUpperCase()}`,
         company,
+        domain,
         dateFormatted: formatDate(item.completionDate) || 'Completed Session',
         timestamp: ts,
         hasRealTimestamp: Boolean(item.completionDate && !isNaN(ts) && ts > 0),
@@ -260,6 +265,7 @@ export default function HistorySection({
       const score = topPath?.fitScore ?? null;
       const ts = item.realTimestamp ? new Date(item.realTimestamp).getTime() : 0;
       const role = topPath?.title || 'Personalized Career Roadmap';
+      const domain = item.navData?.targetDomain || item.domain || null;
       const gaps = (item.navData.prioritySkillGaps || []).slice(0, 3).map((g) => g.skill).join(', ');
 
       list.push({
@@ -274,6 +280,7 @@ export default function HistorySection({
         subtitle: `Resume: ${item.resume.name}`,
         gapsSummary: gaps,
         company: 'Career Trajectory',
+        domain,
         dateFormatted: item.realTimestamp ? formatDate(item.realTimestamp) : 'Saved Roadmap',
         timestamp: ts,
         hasRealTimestamp: Boolean(item.realTimestamp && !isNaN(ts) && ts > 0),
@@ -359,6 +366,7 @@ export default function HistorySection({
     if (window.confirm('Clear all resume analysis history? Mock interviews and saved roadmaps will remain intact.')) {
       setStoredArchives([]);
       setRawArchives([]);
+      playActionConfirm();
     }
   };
 
@@ -566,12 +574,17 @@ export default function HistorySection({
                       {item.title}
                     </h3>
 
-                    {/* Company Pill */}
-                    <div className="flex items-center gap-2 mb-4">
+                    {/* Company & Domain Pills */}
+                    <div className="flex flex-wrap items-center gap-2 mb-4">
                       <span className="inline-flex items-center gap-1 bg-[#111318] border border-[#27272A] text-[#A1A1AA] px-2.5 py-1 rounded-lg text-[11px]">
                         <span className="material-symbols-outlined text-[13px] text-[#71717A]">business</span>
                         <span>{item.company}</span>
                       </span>
+                      {item.domain && (
+                        <span className="inline-flex items-center gap-1 bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] px-2 py-0.5 rounded-lg text-[10px] font-label-caps tracking-wider font-semibold">
+                          {item.domain}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -640,6 +653,11 @@ export default function HistorySection({
                         <span className="material-symbols-outlined text-[13px] text-[#71717A]">domain</span>
                         <span>@{item.company}</span>
                       </span>
+                      {item.domain && (
+                        <span className="inline-flex items-center gap-1 bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] px-2 py-0.5 rounded-lg text-[10px] font-label-caps tracking-wider font-semibold">
+                          {item.domain}
+                        </span>
+                      )}
                       <span className="text-[11px] text-[#71717A]">
                         {item.subtitle}
                       </span>
@@ -705,9 +723,16 @@ export default function HistorySection({
 
                     {/* Resume & Skill Gap Summary */}
                     <div className="space-y-1.5 mb-4">
-                      <p className="text-[11px] text-[#A1A1AA] truncate">
-                        {item.subtitle}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[11px] text-[#A1A1AA] truncate">
+                          {item.subtitle}
+                        </p>
+                        {item.domain && (
+                          <span className="inline-flex items-center gap-1 bg-[#10B981]/15 border border-[#10B981]/30 text-[#10B981] px-2 py-0.5 rounded-lg text-[10px] font-label-caps tracking-wider font-semibold">
+                            {item.domain}
+                          </span>
+                        )}
+                      </div>
                       {item.gapsSummary && (
                         <p className="text-[11px] text-[#71717A] truncate">
                           <strong className="text-[#F59E0B] font-medium">Key Gaps:</strong> {item.gapsSummary}

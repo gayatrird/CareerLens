@@ -1,4 +1,5 @@
-import { companyContexts } from '../config/agents';
+import { companyContexts } from '../config/agents.js';
+import { detectJobDomain, analyzeJdRequirements, textHasPhrase, isInvalidJdRequirement, isMatchedExperiencePhrase, estimateResumeYears } from './jobMatch.js';
 
 const API_URL = '/api/groq';
 // gpt-oss-120b is used because the account's Groq key no longer has access to
@@ -16,7 +17,76 @@ const getCompanyContext = (companyMode) => {
   return companyContexts[companyMode] || companyContexts.general;
 };
 
-// ─── AGENT SYSTEM PROMPTS ──────────────────────────────────────────────────
+// ─── AGENT SYSTEM PROMPTS & SPECIALIST PERSONAS ────────────────────────────
+
+export const getDomainSpecialistPersona = (domain = 'Technology', role = '') => {
+  const domainStr = typeof domain === 'object' && domain !== null ? (domain.domain || '') : String(domain || '');
+  const roleStr = typeof domain === 'object' && domain !== null && !role ? (domain.role || '') : String(role || '');
+  const d = domainStr.toLowerCase();
+  const r = roleStr.toLowerCase();
+  if (d.includes('health') || d.includes('nurs') || d.includes('medic') || d.includes('clinic') || r.includes('nurse')) {
+    return {
+      title: 'Clinical Practice Specialist',
+      scope: 'clinical competence, patient care protocols, medical device/EMR workflows, core qualifications, and high-acuity decision making',
+      domainLabel: 'Clinical & Patient Care',
+      systemLabel: 'Clinical Workflow & Care Delivery Protocols',
+    };
+  }
+  if (d.includes('educat') || d.includes('teach') || d.includes('academ') || d.includes('school') || r.includes('teacher')) {
+    return {
+      title: 'Instructional & Academic Specialist',
+      scope: 'pedagogical methods, curriculum standards, classroom management, student assessment strategies, IEP/differentiation, and instructional leadership',
+      domainLabel: 'Pedagogy & Curriculum',
+      systemLabel: 'Curriculum & Assessment Framework',
+    };
+  }
+  if (d.includes('financ') || d.includes('account') || d.includes('audit') || d.includes('tax') || d.includes('bank') || r.includes('accountant')) {
+    return {
+      title: 'Senior Controller & Audit Specialist',
+      scope: 'accounting standards (GAAP/IFRS), financial reporting, audit compliance, reconciliation rigor, internal controls (SOX), and fiscal analysis',
+      domainLabel: 'Accounting & Regulatory Compliance',
+      systemLabel: 'Financial Controls & Reporting Systems',
+    };
+  }
+  if (d.includes('legal') || d.includes('law')) {
+    return {
+      title: 'Senior Legal & Regulatory Specialist',
+      scope: 'statutory compliance, contract analysis, risk mitigation, regulatory filings, and legal reasoning',
+      domainLabel: 'Legal & Regulatory Rigor',
+      systemLabel: 'Compliance & Governance Framework',
+    };
+  }
+  if (d.includes('market') || d.includes('sales') || d.includes('growth')) {
+    return {
+      title: 'Senior Commercial & Strategy Specialist',
+      scope: 'funnel analytics, market positioning, revenue operations, campaign performance, and client retention',
+      domainLabel: 'Growth & Strategy Execution',
+      systemLabel: 'Go-to-Market & Operations Infrastructure',
+    };
+  }
+  if (d.includes('human') || d.includes('hr') || d.includes('people') || d.includes('talent')) {
+    return {
+      title: 'Senior People Operations Specialist',
+      scope: 'talent strategy, labor compliance, organizational development, employee relations, and HR systems',
+      domainLabel: 'People Strategy & Operations',
+      systemLabel: 'Human Capital & HRIS Architecture',
+    };
+  }
+  if (d.includes('tech') || d.includes('software') || d.includes('engineer') || d.includes('data') || d.includes('it') || d.includes('cyber')) {
+    return {
+      title: 'Staff Software Engineer',
+      scope: 'technical depth, system design, architectural tradeoffs, project complexity, codebase maintainability, and engineering rigor',
+      domainLabel: 'Technical Depth & Architecture',
+      systemLabel: 'System Design & Architecture Signals',
+    };
+  }
+  return {
+    title: 'Senior Domain & Functional Specialist',
+    scope: 'core functional competencies, methodology execution, industry standards, specialized tools, and domain rigor',
+    domainLabel: 'Functional Depth & Domain Competency',
+    systemLabel: 'Workflow & Process Framework',
+  };
+};
 
 // ─── STRUCTURED OUTPUT SCHEMAS ──────────────────────────────────────────────
 // The current model (openai/gpt-oss-120b) drifts from the JSON described inside
@@ -34,6 +104,9 @@ const AGENT_SCHEMAS = {
       type: 'object',
       properties: {
         score: num0100,
+        detectedRole: { type: 'string' },
+        detectedDomain: { type: 'string' },
+        extractedRequirements: strArray,
         missingKeywords: strArray,
         presentKeywords: strArray,
         suggestions: strArray,
@@ -41,7 +114,7 @@ const AGENT_SCHEMAS = {
         sectionQuality: { type: 'string' },
         summary: { type: 'string' },
       },
-      required: ['score', 'missingKeywords', 'presentKeywords', 'suggestions', 'formattingIssues', 'sectionQuality', 'summary'],
+      required: ['score', 'detectedRole', 'detectedDomain', 'extractedRequirements', 'missingKeywords', 'presentKeywords', 'suggestions', 'formattingIssues', 'sectionQuality', 'summary'],
       additionalProperties: false,
     },
   },
@@ -268,6 +341,9 @@ const MOCK_INTERVIEW_START_SCHEMA = {
           'ROLE_SPECIFIC',
           'PROJECT_DEEP_DIVE',
           'SYSTEM_DESIGN',
+          'DOMAIN_KNOWLEDGE',
+          'EXPERIENCE_DEEP_DIVE',
+          'SCENARIO_ANALYSIS',
         ],
       },
       interviewerNote: { type: 'string' },
@@ -297,6 +373,9 @@ const MOCK_INTERVIEW_TURN_SCHEMA = {
           'ROLE_SPECIFIC',
           'PROJECT_DEEP_DIVE',
           'SYSTEM_DESIGN',
+          'DOMAIN_KNOWLEDGE',
+          'EXPERIENCE_DEEP_DIVE',
+          'SCENARIO_ANALYSIS',
           'NONE',
         ],
       },
@@ -348,16 +427,38 @@ const MOCK_INTERVIEW_REPORT_SCHEMA = {
   },
 };
 
-const getAgentSystemPrompt = (agentId, companyMode) => {
+const getAgentSystemPrompt = (agentId, companyMode, context = {}) => {
   const companyCtx = getCompanyContext(companyMode);
   const companyNote = companyCtx ? `\n\nCOMPANY-SPECIFIC CONTEXT: ${companyCtx}` : '';
 
+  const domainContext = {
+    domain: context?.detectedDomain || context?.ats?.detectedDomain || context?.domain || '',
+    role: context?.detectedRole || context?.ats?.detectedRole || context?.role || '',
+  };
+
+  const specialist = getDomainSpecialistPersona(domainContext.domain, domainContext.role);
+
   const prompts = {
-    ats: `You are an ATS (Applicant Tracking System) engine. Analyze the resume against the job description for keyword matches, section completeness, formatting quality, and ATS compatibility.${companyNote}
+    ats: `You are an ATS (Applicant Tracking System) and Domain Intelligence engine. Analyze the resume against the job description for target role/domain classification, keyword matches, extracted requirements, section completeness, formatting quality, and ATS compatibility.${companyNote}
+
+Identify:
+1. "detectedRole": The target professional title (e.g. "Software Developer", "Registered Nurse", "High School Teacher", "Staff Accountant", "Marketing Manager").
+2. "detectedDomain": The broad professional industry/field (e.g. "Technology", "Healthcare", "Education", "Finance & Accounting", "Marketing", "Human Resources", "Legal", "Operations").
+3. "extractedRequirements": Core domain requirements, qualifications, or responsibilities strictly extracted from the job description. CRITICAL: NEVER invent or hallucinate requirements, licenses, or certifications (like BLS, ACLS, or RN license) that are NOT explicitly mentioned in the job description.
+4. "missingKeywords": Core requirements or skills from the job description NOT evidenced in the resume. Never list a keyword as missing if the resume provides semantic or equivalent evidence for it, and never include unmentioned certifications.
+
+CRITICAL RULE — SECTION HEADINGS, METADATA & TEST INSTRUCTIONS:
+- NEVER treat section headings (e.g. "Required Skills", "Preferred Qualifications", "Responsibilities", "Qualifications", "About the Role", "Job Type", "Location") as requirements or keywords.
+- NEVER treat job metadata (e.g. "Domain: Education", "Location: Mumbai", "Job Type: Full-time", "Role: Primary School Teacher") as requirements or keywords.
+- NEVER treat testing/instructional text or example notes (e.g. "For your CareerLens test", "This should ideally produce something like", "Expected output") as requirements or keywords.
+- Extract ONLY genuine skills, responsibilities, tools, degrees, and qualifications.
 
 Respond ONLY in this exact JSON format with no extra text:
 {
   "score": <0-100>,
+  "detectedRole": "Professional Title",
+  "detectedDomain": "Domain Name",
+  "extractedRequirements": ["req 1", "req 2", "req 3", "req 4"],
   "missingKeywords": ["keyword1", "keyword2", "keyword3"],
   "presentKeywords": ["keyword1", "keyword2"],
   "suggestions": ["suggestion1", "suggestion2", "suggestion3"],
@@ -366,29 +467,48 @@ Respond ONLY in this exact JSON format with no extra text:
   "summary": "2-3 sentences on overall ATS compatibility"
 }`,
 
-    recruiter: `You are a senior technical recruiter. Evaluate the resume against the job description by reviewing projects, skills, tech stack alignment, and overall experience relevance.${companyNote}
+    recruiter: `You are a Senior Candidate Screener and Talent Specialist evaluating candidate suitability across professional domains.${domainContext.domain ? `\nTARGET DOMAIN: ${domainContext.domain} | TARGET ROLE: ${domainContext.role || 'Candidate'}` : ''}${companyNote}
+
+Evaluate the resume against the job description with domain neutrality:
+- Review relevant experience, career progression, qualifications, certifications/credentials, key achievements, and role alignment.
+- Do NOT assume a software or IT background unless the job description specifically requires it. For non-technical professions (e.g. Healthcare, Education, Accounting, Sales), evaluate relevant clinical, pedagogical, financial, or operational competencies.
+- "strongProjects": 2-4 demonstrated career achievements, key initiatives, projects, or core competencies evidenced with impact.
+- "weakProjects": 1-3 areas where experience, scope, or evidence is weak or unquantified.
+- "missingExperience": 1-3 required experiences, certifications, credentials, or eligibility criteria missing from the resume.
+- "techStackAlignment": One sentence evaluating alignment with domain-specific tools, platforms, methodologies, or technical stack required by the role.
+- "experienceRelevance": One sentence evaluating overall career trajectory and relevance of past experience to the target position.
+- "summary": 2-3 sentences providing an executive screening assessment of the candidate's viability.
 
 Respond ONLY in this exact JSON format with no extra text:
 {
   "score": <0-100>,
-  "strongProjects": ["project or achievement 1", "project or achievement 2"],
+  "strongProjects": ["achievement or project 1", "achievement or project 2"],
   "weakProjects": ["area 1", "area 2"],
   "missingExperience": ["missing exp 1", "missing exp 2"],
-  "techStackAlignment": "one sentence on tech stack match",
+  "techStackAlignment": "one sentence on domain tools/stack alignment",
   "experienceRelevance": "one sentence on experience relevance",
-  "summary": "2-3 sentences on overall candidacy from a recruiter perspective"
+  "summary": "2-3 sentences on overall candidacy from a screening perspective"
 }`,
 
-    engineer: `You are a Staff Software Engineer conducting a technical resume review. Analyze the technical depth, architecture thinking, project complexity, and identify likely interview topics and weak areas.${companyNote}
+    engineer: `You are a ${specialist.title} conducting an in-depth domain competency and functional depth evaluation.${domainContext.domain ? `\nTARGET DOMAIN: ${domainContext.domain} | TARGET ROLE: ${domainContext.role || specialist.title}` : ''}${companyNote}
+
+Evaluate the candidate's ${specialist.scope}.
+- Identify domain-grounded interview questions probing functional knowledge, problem-solving, and practical decision-making.
+- Evaluate core competency strengths and identify technical, clinical, procedural, or functional gaps.
+- "likelyInterviewQuestions": 4-5 probing, realistic interview questions specific to this domain and the candidate's claimed experience.
+- "weakTechnicalAreas": 2-4 gaps or shallow areas in domain depth, specialized methodologies, tooling, or regulatory/technical knowledge.
+- "strongTechnicalAreas": 2-3 demonstrated areas of solid functional expertise or domain depth.
+- "architectureObservation": One sentence assessing the candidate's mastery of ${specialist.systemLabel} (e.g. system architecture, clinical protocols, curriculum frameworks, or financial controls).
+- "summary": 2-3 sentences synthesizing the candidate's functional depth and domain credibility.
 
 Respond ONLY in this exact JSON format with no extra text:
 {
   "score": <0-100>,
   "likelyInterviewQuestions": ["question 1?", "question 2?", "question 3?", "question 4?", "question 5?"],
-  "weakTechnicalAreas": ["area 1", "area 2", "area 3"],
+  "weakTechnicalAreas": ["area 1", "area 2"],
   "strongTechnicalAreas": ["area 1", "area 2"],
-  "architectureObservation": "one sentence about system design or architecture signals",
-  "summary": "2-3 sentences on overall technical depth"
+  "architectureObservation": "one sentence about workflow, architecture, or domain methodology",
+  "summary": "2-3 sentences on overall domain and functional depth"
 }`,
 
     manager: `You are a Hiring Manager making the final shortlist decision. Evaluate the resume holistically for communication clarity, achievement quantification, leadership signals, and overall fit.${companyNote}
@@ -432,8 +552,10 @@ Respond ONLY in this exact JSON:
 {"overallMatch":<0-100>,"recommendation":"SHORTLIST"|"MAYBE"|"NOT_ALIGNED","actionableTakeaway":"One powerful sentence under 12 words","keyStrengths":["s1","s2","s3"],"keyWeaknesses":["w1","w2","w3"],"hiringInsight":"2-3 sentences","nextStep":"One concrete next step"}`;
 };
 
-const getInterviewQuestionsPrompt = () => {
-  return `You are a senior technical interviewer at a top tech company. Generate targeted interview questions based on the candidate's resume and the specific job description. Questions must reference specific projects, technologies, and experiences from the resume.
+const getInterviewQuestionsPrompt = (context = {}) => {
+  const role = context?.role || context?.detectedRole || 'target position';
+  const domain = context?.domain || context?.detectedDomain || 'domain';
+  return `You are a senior hiring specialist and domain interviewer conducting an interview for a ${role} (${domain}). Generate targeted interview questions based on the candidate's resume and the specific job description across behavioral, role-specific, and core domain/functional areas. Questions must reference specific projects, tools, and experiences from the resume.
 
 Respond ONLY in this exact JSON format with no extra text:
 {
@@ -443,10 +565,10 @@ Respond ONLY in this exact JSON format with no extra text:
     {"question": "full question text?", "context": "why this question is asked"}
   ],
   "technical": [
-    {"question": "full question text?", "context": "why this question is asked"},
-    {"question": "full question text?", "context": "why this question is asked"},
-    {"question": "full question text?", "context": "why this question is asked"},
-    {"question": "full question text?", "context": "why this question is asked"}
+    {"question": "full domain/role question text?", "context": "why this question is asked"},
+    {"question": "full domain/role question text?", "context": "why this question is asked"},
+    {"question": "full domain/role question text?", "context": "why this question is asked"},
+    {"question": "full domain/role question text?", "context": "why this question is asked"}
   ],
   "projectSpecific": [
     {"question": "full question text?", "context": "why this question is asked"},
@@ -602,8 +724,15 @@ const callGroq = async (systemPrompt, userContent, options = {}) => {
 /**
  * Run a single hiring agent analysis
  */
-export const analyzeWithAgent = async (agentId, resumeText, jobDescription, companyMode = 'general') => {
-  const systemPrompt = getAgentSystemPrompt(agentId, companyMode);
+export const analyzeWithAgent = async (agentId, resumeText, jobDescription, companyMode = 'general', context = {}) => {
+  let activeContext = { ...(context || {}) };
+  if (!activeContext.detectedDomain && !activeContext.ats?.detectedDomain) {
+    const detected = detectJobDomain(jobDescription, resumeText, activeContext.ats);
+    activeContext.detectedDomain = detected.domain;
+    activeContext.detectedRole = detected.role;
+  }
+
+  const systemPrompt = getAgentSystemPrompt(agentId, companyMode, activeContext);
 
   const safeResume = resumeText?.substring(0, 2000) || '';
   const safeJD = jobDescription?.substring(0, 2000) || '';
@@ -623,7 +752,57 @@ Analyze this resume against the job description and return your findings in the 
   });
 
   try {
-    return JSON.parse(rawResponse);
+    const parsed = JSON.parse(rawResponse);
+
+    // Backward compatibility & additive domain aliases
+    if (agentId === 'ats') {
+      const fallback = detectJobDomain(jobDescription, resumeText, activeContext.ats);
+      const roleFromAI = cleanText(parsed.detectedRole);
+      const domainFromAI = cleanText(parsed.detectedDomain);
+
+      parsed.detectedDomain = domainFromAI || cleanText(activeContext.detectedDomain) || cleanText(fallback.domain) || 'General';
+      parsed.detectedRole = roleFromAI || cleanText(activeContext.detectedRole) || cleanText(fallback.role) || (parsed.detectedDomain === 'General' ? 'Professional' : `${parsed.detectedDomain} Professional`);
+
+      // Single normalized requirement-evidence analysis for this JD and resume
+      const reqAnalysis = analyzeJdRequirements(jobDescription, resumeText, parsed);
+
+      // Ground extractedRequirements strictly in JD and filter invalid items
+      parsed.extractedRequirements = (reqAnalysis.extractedRequirements.length > 0
+        ? reqAnalysis.extractedRequirements
+        : Array.isArray(parsed.extractedRequirements)
+        ? parsed.extractedRequirements.map(cleanText).filter(r => textHasPhrase(jobDescription, r))
+        : []).filter(r => !isInvalidJdRequirement(r));
+
+      // Filter missingKeywords: MUST be grounded in JD and NOT evidenced/matched in resume, and not invalid
+      const matchedLower = new Set(reqAnalysis.matchedList.map(m => m.toLowerCase()));
+      const rawMissing = Array.isArray(parsed.missingKeywords) ? parsed.missingKeywords : [];
+      const groundedMissing = rawMissing.filter(kw => {
+        const cleanKw = cleanText(kw);
+        if (isInvalidJdRequirement(cleanKw)) return false;
+        const kwLower = cleanKw.toLowerCase();
+        if (!textHasPhrase(jobDescription, kwLower)) return false;
+        if (matchedLower.has(kwLower)) return false;
+        if (reqAnalysis.matchedList.some(m => m.toLowerCase().includes(kwLower) || kwLower.includes(m.toLowerCase()))) return false;
+        return true;
+      });
+
+      parsed.missingKeywords = groundedMissing.filter(kw => !isInvalidJdRequirement(kw));
+      parsed.presentKeywords = reqAnalysis.matchedList.filter(kw => !isInvalidJdRequirement(kw)).slice(0, 8);
+    } else if (agentId === 'recruiter') {
+      parsed.strongAchievements = Array.isArray(parsed.strongProjects) ? parsed.strongProjects : [];
+      parsed.weakExperienceAreas = Array.isArray(parsed.weakProjects) ? parsed.weakProjects : [];
+      parsed.domainToolsAlignment = parsed.techStackAlignment || '';
+    } else if (agentId === 'engineer') {
+      parsed.coreCompetencyGaps = Array.isArray(parsed.weakTechnicalAreas) ? parsed.weakTechnicalAreas : [];
+      parsed.coreCompetencyStrengths = Array.isArray(parsed.strongTechnicalAreas) ? parsed.strongTechnicalAreas : [];
+      parsed.methodologyObservation = parsed.architectureObservation || '';
+      parsed.domainDepthScore = parsed.score ?? 50;
+    }
+
+    parsed.detectedDomain = activeContext.detectedDomain || parsed.detectedDomain || '';
+    parsed.detectedRole = activeContext.detectedRole || parsed.detectedRole || '';
+
+    return parsed;
   } catch (e) {
     console.error(`Failed to parse ${agentId} response:`, e, rawResponse);
     throw new Error(`Failed to parse ${agentId} analysis`);
@@ -645,6 +824,7 @@ export const generateHiringRecommendation = async (resumeText, jobDescription, a
 
   const safeResume = resumeText?.substring(0, 1500) || '';
   const safeJD = jobDescription?.substring(0, 1500) || '';
+  const domainLabel = agentResults?.ats?.detectedDomain || jobMatch?.targetDomain || 'Domain';
 
   const userContent = `RESUME SUMMARY:
 ${safeResume.substring(0, 500)}...
@@ -654,15 +834,17 @@ ${safeJD}
 
 ${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}ATS ANALYSIS:
 Score: ${agentResults.ats?.score ?? 'N/A'}
+Target Role: ${agentResults.ats?.detectedRole || 'N/A'}
+Target Domain: ${agentResults.ats?.detectedDomain || 'N/A'}
 Missing Keywords: ${(agentResults.ats?.missingKeywords || []).join(', ')}
 Summary: ${agentResults.ats?.summary ?? ''}
 
-RECRUITER REVIEW:
+CANDIDATE SCREENING:
 Score: ${agentResults.recruiter?.score ?? 'N/A'}
 Missing Experience: ${(agentResults.recruiter?.missingExperience || []).join(', ')}
 Summary: ${agentResults.recruiter?.summary ?? ''}
 
-TECHNICAL DEPTH:
+${domainLabel.toUpperCase()} / FUNCTIONAL DEPTH:
 Score: ${agentResults.engineer?.score ?? 'N/A'}
 Weak Areas: ${(agentResults.engineer?.weakTechnicalAreas || []).join(', ')}
 Summary: ${agentResults.engineer?.summary ?? ''}
@@ -677,7 +859,7 @@ Impact Score: ${agentResults.optimizer?.overallImpactScore ?? 'N/A'}
 Summary: ${agentResults.optimizer?.summary ?? ''}
 
 ${jobMatch ? `COMPUTED JOB MATCH (authoritative — derived from the expert scores and the resume/job description):
-Overall Match: ${jobMatch.overallMatch} (ATS ${jobMatch.atsCompatibility} | Skills ${jobMatch.skillsMatch} | Experience ${jobMatch.experienceMatch} | Technical ${jobMatch.technicalMatch})
+Overall Match: ${jobMatch.overallMatch} (ATS ${jobMatch.atsCompatibility} | Skills ${jobMatch.skillsMatch} | Experience ${jobMatch.experienceMatch} | Domain Depth ${jobMatch.domainDepthMatch ?? jobMatch.technicalMatch})
 Matched Skills: ${(jobMatch.matchedSkills || []).join(', ')}
 Missing Skills: ${(jobMatch.missingSkills || []).join(', ')}
 Weak Skills: ${(jobMatch.weakSkills || []).join(', ')}
@@ -717,20 +899,23 @@ RULE: Your "overallMatch" field MUST equal the Computed Overall Match value abov
 /**
  * Generate targeted interview questions
  */
-export const generateInterviewQuestions = async (resumeText, jobDescription, companyMode = 'general') => {
+export const generateInterviewQuestions = async (resumeText, jobDescription, companyMode = 'general', context = {}) => {
   const companyCtx = getCompanyContext(companyMode);
-  const systemPrompt = getInterviewQuestionsPrompt();
+  const systemPrompt = getInterviewQuestionsPrompt(context);
 
   const safeResume = resumeText?.substring(0, 1500) || '';
   const safeJD = jobDescription?.substring(0, 1500) || '';
 
-  const userContent = `RESUME:
+  const roleText = context?.role || context?.detectedRole ? `TARGET ROLE: ${context.role || context.detectedRole}\n` : '';
+  const domainText = context?.domain || context?.detectedDomain ? `TARGET DOMAIN: ${context.domain || context.detectedDomain}\n` : '';
+
+  const userContent = `${roleText}${domainText}RESUME:
 ${safeResume}
 
 JOB DESCRIPTION:
 ${safeJD}
 
-${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}Generate targeted interview questions that specifically reference this candidate's projects, technologies, and experiences as listed in their resume. Make questions highly specific, not generic.`;
+${companyCtx ? `COMPANY CONTEXT: ${companyCtx}\n\n` : ''}Generate targeted interview questions that specifically reference this candidate's projects, domain competencies, methodologies, and experiences as listed in their resume. For technology roles, emphasize technical and system architecture deep dives; for healthcare, education, finance, and other professions, focus on domain-specific practice, standards, protocols, and scenarios. Make questions highly specific, not generic.`;
 
   const rawResponse = await callGroq(systemPrompt, userContent, {
     temperature: 0.4,
@@ -769,13 +954,15 @@ No other text.`;
 
 // ─── DEEP ATS SCAN ───────────────────────────────────────────────────────────
 
-const DEEP_ATS_SYSTEM_PROMPT = `You are an expert ATS (Applicant Tracking System) analyst and senior technical recruiter with 15+ years of experience screening resumes against job descriptions across tech, product, and business roles.
+const DEEP_ATS_SYSTEM_PROMPT = `You are an expert ATS (Applicant Tracking System) analyst and senior talent acquisition screener with 15+ years of experience screening resumes against job descriptions across diverse professional domains including Technology, Healthcare, Education, Finance & Accounting, Operations, and Business Services.
 
 You will be given:
+[TARGET_ROLE] (if provided): The candidate's target job title
+[TARGET_DOMAIN] (if provided): The candidate's career domain
 [RESUME]: the candidate's full resume text
 [JOB_DESCRIPTION]: the target job posting text
 
-Analyze the resume strictly against the job description and return ONLY a valid JSON object with this exact structure — no markdown, no preamble, no commentary outside the JSON:
+Analyze the resume strictly against the job description and evaluate role-specific credentials, certifications, core domain competencies, qualifications, responsibilities, and requirements appropriate to the target domain. Return ONLY a valid JSON object with this exact structure — no markdown, no preamble, no commentary outside the JSON:
 
 {
   "match_score": {
@@ -793,7 +980,7 @@ Analyze the resume strictly against the job description and return ONLY a valid 
     {
       "keyword": "<keyword or phrase>",
       "importance_rank": <integer 1-5>,
-      "why_it_matters": "<one short phrase, e.g. 'appears 4x in JD, core requirement'>"
+      "why_it_matters": "<one short phrase, e.g. 'core requirement in JD'>"
     }
   ],
   "bullet_rewrites": [
@@ -807,23 +994,27 @@ Analyze the resume strictly against the job description and return ONLY a valid 
 }
 
 RULES YOU MUST FOLLOW:
-1. Match score must be justified by actual keyword/skill overlap and experience relevance — do not inflate it to be encouraging.
-2. skills_comparison must cover every explicit requirement/skill mentioned in the JD, not a cherry-picked subset.
-3. missing_keywords: rank by how frequently/prominently the term appears in the JD and how core it is to the role (e.g. a required tool ranks higher than a "nice to have").
-4. bullet_rewrites: select exactly the 3 weakest or least JD-relevant bullets from the resume. You may ONLY rephrase, reframe, reorder, or use different wording to surface existing experience. You must NEVER invent metrics, technologies, responsibilities, or outcomes that are not already present or reasonably implied in the original bullet. If a bullet has no quantifiable result in the original, do not add a fabricated number.
-5. cover_letter: must be grounded only in experience actually present in the resume. No invented projects, companies, or claims. Keep it to approximately 120 words, professional tone, specific to this JD (reference the role/company context if present in the JD).
+1. Match score must be justified by actual keyword/skill overlap, domain credentials, and experience relevance — do not inflate it to be encouraging.
+2. skills_comparison must cover every explicit requirement/skill mentioned in the JD (clinical, educational, financial, operational, or technical). DO NOT invent, assume, or hallucinate credentials, licenses, or certifications (such as BLS or ACLS) unless they explicitly appear in the job description text.
+3. missing_keywords: ONLY include keywords or phrases that ACTUALLY appear in the job description and are genuinely missing from the resume. Never list an unmentioned certification, and never list a keyword as missing if the resume has equivalent or semantic evidence for it.
+4. bullet_rewrites: select exactly the 3 weakest or least JD-relevant bullets from the resume. You may ONLY rephrase, reframe, reorder, or use domain-appropriate terminology to surface existing experience. You must NEVER invent metrics, technologies, credentials, or outcomes that are not already present or reasonably implied in the original bullet. If a bullet has no quantifiable result in the original, do not add a fabricated number.
+5. cover_letter: must be tailored strictly to the target role and domain. Ground it ONLY in experience actually present in the resume. Absolutely DO NOT inject software, coding, IT, or tech buzzwords into non-technical roles (such as nursing, teaching, accounting). Keep it to approximately 120 words, professional tone, specific to this JD.
 6. If the job description is vague or missing key details, note this in match_score.reason rather than guessing.
-7. Output valid JSON only. No trailing commentary.`;
+8. NEVER include section headings (e.g. "Required Skills", "Responsibilities", "Preferred Qualifications"), metadata (e.g. "Domain: Education", "Location: ...", "Job Type: ..."), or test instructions as skills or keywords.
+9. Output valid JSON only. No trailing commentary.`;
 
 /**
  * Run a single deep ATS scan combining match scoring, skills comparison,
  * keyword gap analysis, bullet rewrites, and cover letter generation.
  */
-export const runDeepAtsScan = async (resumeText, jobDescription) => {
+export const runDeepAtsScan = async (resumeText, jobDescription, context = {}) => {
   const safeResume = resumeText?.substring(0, 3000) || '';
   const safeJD = jobDescription?.substring(0, 3000) || '';
 
-  const userContent = `[RESUME]:
+  const roleText = context?.role || context?.detectedRole ? `[TARGET_ROLE]: ${context.role || context.detectedRole}\n` : '';
+  const domainText = context?.domain || context?.detectedDomain ? `[TARGET_DOMAIN]: ${context.domain || context.detectedDomain}\n` : '';
+
+  const userContent = `${roleText}${domainText}[RESUME]:
 ${safeResume}
 
 [JOB_DESCRIPTION]:
@@ -836,7 +1027,52 @@ ${safeJD}`;
   });
 
   try {
-    return JSON.parse(rawResponse);
+    const parsed = JSON.parse(rawResponse);
+    const reqAnalysis = analyzeJdRequirements(jobDescription, resumeText, context);
+    const candidateYears = reqAnalysis.candidateYears ?? estimateResumeYears(resumeText, context);
+
+    // Harmonize skills_comparison with normalized requirement evidence
+    if (Array.isArray(parsed.skills_comparison)) {
+      // 1. Filter out hallucinated skills that are NOT in the JD and any headings/metadata
+      parsed.skills_comparison = parsed.skills_comparison.filter(item => {
+        const skillName = cleanText(item.skill);
+        if (isInvalidJdRequirement(skillName)) return false;
+        return textHasPhrase(jobDescription, skillName) ||
+               reqAnalysis.extractedRequirements.some(r => r.toLowerCase().includes(skillName.toLowerCase()) || skillName.toLowerCase().includes(r.toLowerCase()));
+      });
+
+      // 2. Harmonize status: if reqAnalysis matched it, status must be 'yes' (never contradictory 'no')
+      for (const item of parsed.skills_comparison) {
+        const sLower = cleanText(item.skill).toLowerCase();
+        const isMatched = reqAnalysis.matchedList.some(m => {
+          const mLower = m.toLowerCase();
+          return mLower.includes(sLower) || sLower.includes(mLower);
+        }) || isMatchedExperiencePhrase(sLower, candidateYears, reqAnalysis.matchedList);
+        if (isMatched && item.status === 'no') {
+          item.status = 'yes';
+          if (!item.evidence || item.evidence.toLowerCase().includes('not mentioned')) {
+            item.evidence = 'Evidenced through relevant clinical / professional responsibilities in resume';
+          }
+        }
+      }
+    }
+
+    // Harmonize missing_keywords in Deep ATS: never include items that are matched or absent from JD, or headings/metadata
+    if (Array.isArray(parsed.missing_keywords)) {
+      const matchedLower = new Set(reqAnalysis.matchedList.map(m => m.toLowerCase()));
+      parsed.missing_keywords = parsed.missing_keywords.filter(item => {
+        const kw = cleanText(item.keyword);
+        if (isInvalidJdRequirement(kw)) return false;
+        const kwLower = kw.toLowerCase();
+        if (!textHasPhrase(jobDescription, kwLower)) return false;
+        if (matchedLower.has(kwLower)) return false;
+        if (reqAnalysis.matchedList.some(m => m.toLowerCase().includes(kwLower) || kwLower.includes(m.toLowerCase()))) return false;
+        if (isMatchedExperiencePhrase(kwLower, candidateYears, reqAnalysis.matchedList)) return false;
+        return true;
+      });
+    }
+
+    return parsed;
   } catch (e) {
     console.error('Failed to parse Deep ATS Scan response:', e, rawResponse);
     throw new Error('Failed to parse Deep ATS Scan results. Please try again.');
@@ -903,14 +1139,14 @@ const CAREER_NAVIGATOR_SCHEMA = {
   },
 };
 
-const CAREER_NAVIGATOR_SYSTEM_PROMPT = `You are an expert career strategist and professional coach. Analyze the candidate's resume and prior analysis data to generate a realistic, high-impact, concise career navigation plan.
+const CAREER_NAVIGATOR_SYSTEM_PROMPT = `You are an expert career strategist and professional coach across diverse career domains (Technology, Healthcare, Education, Finance, Operations, etc.). Analyze the candidate's resume and prior analysis data to generate a realistic, high-impact, concise career navigation plan tailored to their specific professional domain and career trajectory. Do NOT assume the candidate is in software/IT unless their resume or target domain indicates it.
 
 CONCISENESS RULES & OUTPUT CONSTRAINTS:
 1. Base all recommendations strictly on evidence in the resume and analysis data provided. Do not invent skills or credentials.
 2. Keep ALL descriptions concise and punchy (1-2 sentences maximum per field). Avoid filler words, preamble, or essay-length text.
 3. careerSummary: Exactly 2 concise sentences summarizing the candidate's current professional identity, core strengths, and immediate growth trajectory.
 4. topCareerPaths: Exactly 3 best-fit career paths (no more, no less). For each path:
-   - title: Clear, recognized role title
+   - title: Clear, recognized role title appropriate for their professional domain
    - fitScore: Realistic 0-100 alignment score (above 80 means strong existing alignment)
    - whyFit: 1 concise sentence explaining the alignment
    - currentStrengths: Exactly 2-3 concise skill/experience bullet strings
@@ -940,6 +1176,8 @@ Respond ONLY in the required JSON format with no extra text.`;
  * @param {Object} [context.recommendation] - Final recommendation object
  * @param {Object} [context.jobMatch] - Deterministic job match scores
  * @param {string} [context.jobDescription] - Job description used in the latest analysis
+ * @param {string} [context.targetRole] - Detected or target role
+ * @param {string} [context.targetDomain] - Detected or target domain
  * @returns {Promise<Object>} Parsed CareerNavigator result matching CAREER_NAVIGATOR_SCHEMA
  */
 export const generateCareerNavigator = async (resumeText, context = {}) => {
@@ -948,11 +1186,30 @@ export const generateCareerNavigator = async (resumeText, context = {}) => {
     throw new Error('Resume text is too short to generate a career navigation report.');
   }
 
-  const { agentResults = {}, recommendation = null, jobMatch = null, jobDescription = '' } = context;
+  const {
+    agentResults = {},
+    recommendation = null,
+    jobMatch = null,
+    jobDescription = '',
+    targetRole = context.jobMatch?.targetRole || agentResults.ats?.detectedRole || '',
+    targetDomain = context.jobMatch?.targetDomain || agentResults.ats?.detectedDomain || '',
+  } = context;
 
   // Build a compact, token-efficient context block from existing analysis data.
   // We only include concise indicators to leave maximal token budget for generation.
   const contextLines = [];
+
+  let resolvedRole = targetRole;
+  let resolvedDomain = targetDomain;
+  if (!resolvedRole || !resolvedDomain) {
+    const auto = detectJobDomain(jobDescription, safeResume);
+    if (!resolvedRole) resolvedRole = auto.role;
+    if (!resolvedDomain) resolvedDomain = auto.domain;
+  }
+
+  if (resolvedDomain || resolvedRole) {
+    contextLines.push(`Target Domain: ${resolvedDomain || 'General Professional'} | Target Role: ${resolvedRole || 'Not specified'}`);
+  }
 
   if (agentResults.ats) {
     contextLines.push(`ATS Score: ${agentResults.ats.score ?? 'N/A'}`);
@@ -969,11 +1226,11 @@ export const generateCareerNavigator = async (resumeText, context = {}) => {
   }
 
   if (agentResults.engineer) {
-    contextLines.push(`Tech Score: ${agentResults.engineer.score ?? 'N/A'}`);
+    contextLines.push(`Domain Specialist Score: ${agentResults.engineer.score ?? 'N/A'}`);
     if ((agentResults.engineer.strongTechnicalAreas || []).length > 0)
-      contextLines.push(`Strong Tech: ${agentResults.engineer.strongTechnicalAreas.slice(0, 2).join(', ')}`);
+      contextLines.push(`Core Strengths: ${agentResults.engineer.strongTechnicalAreas.slice(0, 2).join(', ')}`);
     if ((agentResults.engineer.weakTechnicalAreas || []).length > 0)
-      contextLines.push(`Weak Tech: ${agentResults.engineer.weakTechnicalAreas.slice(0, 2).join(', ')}`);
+      contextLines.push(`Core Weaknesses: ${agentResults.engineer.weakTechnicalAreas.slice(0, 2).join(', ')}`);
   }
 
   if (agentResults.manager) {
@@ -985,7 +1242,7 @@ export const generateCareerNavigator = async (resumeText, context = {}) => {
   }
 
   if (jobMatch) {
-    contextLines.push(`Skills Match: ${jobMatch.skillsMatch ?? 'N/A'}% | Tech Match: ${jobMatch.technicalMatch ?? 'N/A'}%`);
+    contextLines.push(`Skills Match: ${jobMatch.skillsMatch ?? 'N/A'}% | Domain Depth: ${jobMatch.domainDepthMatch ?? jobMatch.technicalMatch ?? 'N/A'}%`);
   }
 
   if (jobDescription) {
@@ -1005,7 +1262,10 @@ export const generateCareerNavigator = async (resumeText, context = {}) => {
   });
 
   try {
-    return JSON.parse(rawResponse);
+    const parsed = JSON.parse(rawResponse);
+    parsed.targetRole = resolvedRole;
+    parsed.targetDomain = resolvedDomain;
+    return parsed;
   } catch (e) {
     console.error('Failed to parse Career Navigator response:', e, rawResponse);
     throw new Error('Failed to parse Career Navigator results. Please try again.');
@@ -1025,41 +1285,46 @@ export const startMockInterview = async (
   jobContext = ''
 ) => {
   const safeResume = (resumeText || '').substring(0, 1600);
-  const targetRole = (roleTitle || 'Software Engineer').trim();
+  const targetRole = (roleTitle || '').trim() || 'Professional Candidate';
   const targetCompany = (companyName || 'General').trim();
   const interviewMode = (mode || 'mixed').toLowerCase();
 
-  const systemPrompt = `You are a Principal Technical Interviewer and Hiring Committee Member conducting an elite, realistic mock interview for "${targetRole}" at "${targetCompany}".
-Interview Mode: ${interviewMode.toUpperCase()}. Total Questions: ${totalQuestions}.
-Your goal is to evaluate the candidate thoroughly across key competencies with realistic, grounded questions.
+  const domainInfo = detectJobDomain(`${targetRole} ${jobContext || ''} ${safeResume.substring(0, 500)}`);
+  const domain = domainInfo.domain;
+  const persona = getDomainSpecialistPersona(domain, targetRole || domainInfo.role);
+
+  const systemPrompt = `You are an elite ${persona.title} and Senior Interview Panel Lead conducting a realistic professional mock interview for "${targetRole}" at "${targetCompany}".
+Professional Domain: ${domain}. Interview Mode: ${interviewMode.toUpperCase()}. Total Questions: ${totalQuestions}.
+Your goal is to evaluate the candidate thoroughly across key competencies with realistic, grounded questions suitable for this role and professional domain.
 
 Respond ONLY with valid JSON matching the schema.`;
 
   const userContent = `CANDIDATE RESUME:
-${safeResume || 'General software development background.'}
+${safeResume || 'Professional candidate profile.'}
 
 ROLE: ${targetRole}
+DOMAIN: ${domain}
 COMPANY: ${targetCompany}
 INTERVIEW FOCUS: ${interviewMode.toUpperCase()}
 TOTAL QUESTIONS IN SESSION: ${totalQuestions}
 ${jobContext ? `ADDITIONAL JOB CONTEXT / SKILLS:\n${jobContext}\n` : ''}
 TASK:
 Generate Question 1 (1 of ${totalQuestions}) to start this mock interview:
-- If TECHNICAL: Pose an architectural or technical knowledge question tailored to "${targetRole}" (need not be restricted only to technologies explicitly mentioned in the resume). Set category to TECHNICAL.
-- If BEHAVIORAL: Pose a STAR-method behavioral question about communication, teamwork, deadline management, leadership, or handling conflict. Set category to BEHAVIORAL.
+- If TECHNICAL: Pose a domain knowledge, methodology, or professional competency question tailored to "${targetRole}" (${persona.scope}). For tech roles, focus on system architecture/coding; for nursing, clinical protocols/patient safety; for education, pedagogy/curriculum; for finance, GAAP/financial reporting. Set category to TECHNICAL or DOMAIN_KNOWLEDGE.
+- If BEHAVIORAL: Pose a STAR-method behavioral question about communication, teamwork, stakeholder/patient/student management, leadership, or handling conflict. Set category to BEHAVIORAL.
 - If MIXED:
   The overall interview will cover multiple distinct competency areas across the session:
-  1. Technical Knowledge (TECHNICAL)
+  1. Domain / Technical Knowledge (TECHNICAL or DOMAIN_KNOWLEDGE)
   2. Role-Specific / Job Scenarios (ROLE_SPECIFIC)
-  3. Problem Solving / Systems (PROBLEM_SOLVING)
+  3. Problem Solving / Scenario Analysis (PROBLEM_SOLVING or SCENARIO_ANALYSIS)
   4. Behavioral / STAR (BEHAVIORAL)
-  5. Resume / Project Deep Dive (PROJECT_DEEP_DIVE)
-  * IMPORTANT: Project questions must NOT dominate the interview.
+  5. Experience / Case Deep Dive (PROJECT_DEEP_DIVE or EXPERIENCE_DEEP_DIVE)
+  * IMPORTANT: Deep dive questions must NOT dominate the interview.
   * For Question 1, generate a strong, engaging opening question from ONE of:
-    - TECHNICAL (core technical principles or architecture for ${targetRole})
+    - TECHNICAL or DOMAIN_KNOWLEDGE (core domain principles, protocols, or methodologies for ${targetRole})
     - ROLE_SPECIFIC (practical domain practices, workflows, or role expectations for ${targetRole})
-    - PROBLEM_SOLVING (analytical scenario, system design, or debugging challenge)
-    - PROJECT_DEEP_DIVE (probing a specific key project or achievement grounded in the candidate's resume)
+    - PROBLEM_SOLVING or SCENARIO_ANALYSIS (analytical scenario, workflow triage, or situational challenge)
+    - PROJECT_DEEP_DIVE or EXPERIENCE_DEEP_DIVE (probing a specific key initiative, case, or achievement grounded in the candidate's resume)
   * Set the "category" accurately to match the question generated.
 
 Provide a concise "interviewerNote" outlining the key competency being tested.`;
@@ -1084,7 +1349,7 @@ Provide a concise "interviewerNote" outlining the key competency being tested.`;
  */
 export const submitMockInterviewTurn = async ({
   resumeText = '',
-  roleTitle = 'Software Engineer',
+  roleTitle = 'Professional Candidate',
   companyName = 'General',
   mode = 'mixed',
   currentQuestionIndex = 1,
@@ -1098,6 +1363,10 @@ export const submitMockInterviewTurn = async ({
   const safeResume = (resumeText || '').substring(0, 1200);
   const safeAnswer = (userAnswer || '').trim().substring(0, 2500);
   const isFinalTurn = currentQuestionIndex >= totalQuestions;
+
+  const domainInfo = detectJobDomain(`${roleTitle} ${jobContext || ''} ${safeResume.substring(0, 400)}`);
+  const domain = domainInfo.domain;
+  const persona = getDomainSpecialistPersona(domain, roleTitle || domainInfo.role);
 
   // Track all questions asked in this interview so far
   const completedPriorList = (previousTurns || []).map((t, idx) => ({
@@ -1117,10 +1386,10 @@ export const submitMockInterviewTurn = async ({
     ...completedPriorList.map((t) => t.category),
     currentCategory,
   ];
-  const projectCount = categoriesCovered.filter((c) => c === 'PROJECT_DEEP_DIVE').length;
+  const projectCount = categoriesCovered.filter((c) => c === 'PROJECT_DEEP_DIVE' || c === 'EXPERIENCE_DEEP_DIVE').length;
 
-  const systemPrompt = `You are a Principal Technical Interviewer evaluating a live mock interview for "${roleTitle}" at "${companyName}".
-Interview Mode: ${mode.toUpperCase()}. Question ${currentQuestionIndex} of ${totalQuestions}.
+  const systemPrompt = `You are a ${persona.title} evaluating a live mock interview for "${roleTitle}" at "${companyName}".
+Domain: ${domain}. Interview Mode: ${mode.toUpperCase()}. Question ${currentQuestionIndex} of ${totalQuestions}.
 You must simultaneously evaluate the candidate's answer AND determine the next question in the interview.
 
 Respond ONLY with valid JSON matching the schema.`;
@@ -1128,7 +1397,7 @@ Respond ONLY with valid JSON matching the schema.`;
   const userContent = `CANDIDATE RESUME SUMMARY:
 ${safeResume.substring(0, 700)}
 
-ROLE: ${roleTitle} | COMPANY: ${companyName} | MODE: ${mode}
+ROLE: ${roleTitle} | DOMAIN: ${domain} | COMPANY: ${companyName} | MODE: ${mode}
 ${jobContext ? `JOB CONTEXT / SKILLS: ${jobContext}\n` : ''}
 QUESTIONS ASKED IN THIS SESSION SO FAR:
 ${allQuestionsSoFar}
@@ -1144,9 +1413,9 @@ CANDIDATE'S SUBMITTED ANSWER:
 
 INSTRUCTIONS:
 1. EVALUATION:
-   - score: A fair score (0-100) based on accuracy, structure, engineering depth, and clarity. Be realistic (shallow answers: 40-60, solid structured answers: 75-90).
-   - conciseFeedback: 2-3 sentences of direct, actionable feedback. Point out specifically what was strong and what critical points were omitted.
-   - idealAnswerPoints: 2-3 bullet points of what a top-tier candidate would touch upon.
+   - score: A fair score (0-100) based on accuracy, structure, domain depth (${persona.scope}), and clarity. Be realistic (shallow answers: 40-60, solid structured answers: 75-90).
+   - conciseFeedback: 2-3 sentences of direct, actionable feedback tailored to ${domain}. Point out specifically what was strong and what critical points were omitted.
+   - idealAnswerPoints: 2-3 bullet points of what a top-tier candidate in ${roleTitle} would touch upon.
 2. NEXT QUESTION:
    ${isFinalTurn ? `
    - Since this was question ${currentQuestionIndex} of ${totalQuestions}, the interview is now complete.
@@ -1159,23 +1428,23 @@ INSTRUCTIONS:
    - CATEGORY BALANCE RULES:
      ${mode === 'mixed' ? `
      * MIXED MODE MUST BE BALANCED across competencies:
-       1. PROJECT_DEEP_DIVE: Resume/project deep-dive (must be grounded in candidate's actual resume projects).
-       2. TECHNICAL: Technical knowledge & engineering concepts for "${roleTitle}" (need not be limited to technologies explicitly on their resume).
-       3. PROBLEM_SOLVING: Problem-solving, scenario-based challenge, debugging, or system design.
-       4. BEHAVIORAL: Behavioral / STAR question (teamwork, conflict, leadership, adaptability, learning).
+       1. PROJECT_DEEP_DIVE / EXPERIENCE_DEEP_DIVE: Resume deep-dive (must be grounded in candidate's actual background).
+       2. TECHNICAL / DOMAIN_KNOWLEDGE: Core domain knowledge & professional concepts for "${roleTitle}" (${persona.scope}).
+       3. PROBLEM_SOLVING / SCENARIO_ANALYSIS: Situational challenge, workflow triage, or real-world problem solving.
+       4. BEHAVIORAL: Behavioral / STAR question (teamwork, conflict, stakeholder communication, adaptability).
        5. ROLE_SPECIFIC: Role-specific / job-related real-world situations, domain practices, and trade-offs.
      * CRITICAL RULES FOR MIXED MODE:
-       - PROJECT_DEEP_DIVE MUST NOT DOMINATE. Limit project deep-dive questions to at most 1 across the interview (max 2 for 8+ questions).
-       ${projectCount >= 1 ? '- A project deep dive question has ALREADY been asked in this session. You MUST select a different category (TECHNICAL, PROBLEM_SOLVING, BEHAVIORAL, or ROLE_SPECIFIC) for Question ' + (currentQuestionIndex + 1) + '.' : ''}
+       - Experience deep-dive questions MUST NOT dominate. Limit to at most 1 across the interview (max 2 for 8+ questions).
+       ${projectCount >= 1 ? '- An experience deep dive question has ALREADY been asked in this session. You MUST select a different category (TECHNICAL, DOMAIN_KNOWLEDGE, PROBLEM_SOLVING, SCENARIO_ANALYSIS, BEHAVIORAL, or ROLE_SPECIFIC) for Question ' + (currentQuestionIndex + 1) + '.' : ''}
        - For 3-question interviews: prefer 3 distinct categories.
-       - For 5-question interviews: aim for 1 Technical, 1 Behavioral, 1 Problem-Solving, 1 Role-Specific, 1 Project Deep-Dive.
-       - For 8-question interviews: ensure broad coverage across all 5 competency areas.
-       - Choose a category from the 5 areas that has NOT yet been covered: [${categoriesCovered.join(', ')}].
+       - For 5-question interviews: aim for 1 Domain Knowledge, 1 Behavioral, 1 Problem-Solving, 1 Role-Specific, 1 Experience Deep-Dive.
+       - For 8-question interviews: ensure broad coverage across all competency areas.
+       - Choose a category that has NOT yet been covered: [${categoriesCovered.join(', ')}].
      * DYNAMIC ADAPTATION:
        - Adapt dynamically to the candidate's answer above. If they struggled or excelled, adjust difficulty or probe logically, but ensure overall category diversity across the session.
-     * Set "nextCategory" to the exact category of Question ${currentQuestionIndex + 1} (one of: TECHNICAL, BEHAVIORAL, PROBLEM_SOLVING, ROLE_SPECIFIC, PROJECT_DEEP_DIVE, SYSTEM_DESIGN).` :
+     * Set "nextCategory" to the exact category of Question ${currentQuestionIndex + 1} (one of: TECHNICAL, BEHAVIORAL, PROBLEM_SOLVING, ROLE_SPECIFIC, PROJECT_DEEP_DIVE, SYSTEM_DESIGN, DOMAIN_KNOWLEDGE, EXPERIENCE_DEEP_DIVE, SCENARIO_ANALYSIS).` :
      mode === 'technical' ? `
-     * TECHNICAL MODE: Focus on technical/engineering knowledge, architectural concepts, or problem-solving relevant to "${roleTitle}". Questions should test technical depth appropriate for the role and do not have to be limited to technologies listed on the resume. Categories: TECHNICAL, PROBLEM_SOLVING, or SYSTEM_DESIGN.` : `
+     * TECHNICAL / DOMAIN DEPTH MODE: Focus on domain/technical knowledge, methodologies, or problem-solving relevant to "${roleTitle}" (${persona.scope}). Categories: TECHNICAL, DOMAIN_KNOWLEDGE, PROBLEM_SOLVING, SYSTEM_DESIGN, or SCENARIO_ANALYSIS.` : `
      * BEHAVIORAL MODE: Focus on workplace behavior, communication, teamwork, adaptability, leadership, conflict resolution, and learning (STAR-style scenarios). Category: BEHAVIORAL.`}
    - Ensure "nextCategory" accurately matches the category of Question ${currentQuestionIndex + 1}.
    - Provide a concise nextInterviewerNote outlining the key competency being tested.`}`;
@@ -1201,13 +1470,16 @@ INSTRUCTIONS:
 export const generateMockInterviewFinalReport = async (sessionData) => {
   const {
     resumeText = '',
-    roleTitle = 'Software Engineer',
+    roleTitle = 'Professional Candidate',
     companyName = 'General',
     mode = 'mixed',
     turns = [],
   } = sessionData;
 
   const safeResume = (resumeText || '').substring(0, 1000);
+  const domainInfo = detectJobDomain(`${roleTitle} ${safeResume.substring(0, 400)}`);
+  const domain = domainInfo.domain;
+  const persona = getDomainSpecialistPersona(domain, roleTitle || domainInfo.role);
 
   const transcript = turns.map((t, i) => `
 ROUND ${i + 1} [${t.category}]:
@@ -1218,7 +1490,7 @@ Turn Feedback: ${t.conciseFeedback}
 Ideal Key Points: ${(t.idealAnswerPoints || []).join('; ')}
 `).join('\n---\n');
 
-  const systemPrompt = `You are the Lead Hiring Committee Director reviewing an end-of-round Mock Interview report for "${roleTitle}" at "${companyName}".
+  const systemPrompt = `You are a ${persona.title} and Lead Hiring Committee Director reviewing an end-of-round Mock Interview report for "${roleTitle}" in "${domain}" at "${companyName}".
 Synthesize the overall performance into a detailed, rigorous final evaluation.
 
 Respond ONLY with valid JSON matching the schema.`;
@@ -1227,6 +1499,7 @@ Respond ONLY with valid JSON matching the schema.`;
 ${safeResume}
 
 ROLE: ${roleTitle}
+DOMAIN: ${domain}
 COMPANY: ${companyName}
 INTERVIEW MODE: ${mode}
 
@@ -1236,7 +1509,7 @@ ${transcript}
 TASK:
 Produce the comprehensive final scorecard:
 - overallScore: Weighted average composite score (0-100).
-- technicalKnowledge: Score (0-100) reflecting technical depth, precision, and tool proficiency.
+- technicalKnowledge: Score (0-100) reflecting core domain/technical depth, precision, and role proficiency in ${domain}.
 - problemSolving: Score (0-100) reflecting analytical structure, edge cases, and reasoning.
 - communication: Score (0-100) reflecting articulation, structure, and brevity.
 - answerQuality: Score (0-100) reflecting completeness and relevance to the question.

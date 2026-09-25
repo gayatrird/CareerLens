@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { generateInterviewQuestions } from '../services/hiringApi';
 import MockInterviewSection from './MockInterviewSection';
+import MockInterviewErrorBoundary from './MockInterviewErrorBoundary';
 import {
   getStoredArchives,
   setStoredArchives,
@@ -25,11 +26,67 @@ export default function InterviewSection({ initialSession }) {
     }
   }, []);
 
+  const getDomainQuestionLabels = (domain) => {
+    const d = (domain || '').toLowerCase();
+    if (d.includes('tech') || d.includes('software') || d.includes('dev') || d.includes('it')) {
+      return {
+        techLabel: 'TECHNICAL / CODING DEEP DIVE',
+        techDesc: 'Tech stack, systems, architecture & problem-solving deep dives',
+        projectLabel: 'PROJECT & SYSTEM DESIGN',
+        projectDesc: 'Technical implementation details and system architecture questions',
+        behavioralLabel: 'BEHAVIORAL',
+        behavioralDesc: 'STAR-method questions from your career experience'
+      };
+    }
+    if (d.includes('health') || d.includes('nurse') || d.includes('medic') || d.includes('clinic')) {
+      return {
+        techLabel: 'CLINICAL & DOMAIN KNOWLEDGE',
+        techDesc: 'Patient care standards, triage protocols, medical safety & clinical judgment',
+        projectLabel: 'CLINICAL SCENARIOS & CASE EXPERIENCE',
+        projectDesc: 'Hands-on patient cases, critical care procedures & multidisciplinary teamwork',
+        behavioralLabel: 'BEHAVIORAL & PATIENT COMMUNICATION',
+        behavioralDesc: 'Empathetic care, conflict resolution, ethics & high-pressure resilience'
+      };
+    }
+    if (d.includes('educat') || d.includes('teach') || d.includes('school') || d.includes('academ')) {
+      return {
+        techLabel: 'PEDAGOGY & CURRICULUM MASTERY',
+        techDesc: 'Instructional methodologies, curriculum standards, differentiation & student engagement',
+        projectLabel: 'CLASSROOM SCENARIOS & EXPERIENCE',
+        projectDesc: 'Actual lesson delivery, classroom interventions, assessment design & IEP management',
+        behavioralLabel: 'BEHAVIORAL & CLASSROOM LEADERSHIP',
+        behavioralDesc: 'Parent-teacher communication, student support, ethics & team collaboration'
+      };
+    }
+    if (d.includes('finan') || d.includes('account') || d.includes('audit') || d.includes('tax') || d.includes('bank')) {
+      return {
+        techLabel: 'FINANCIAL & REGULATORY KNOWLEDGE',
+        techDesc: 'GAAP/IFRS compliance, financial reporting, auditing, ledger reconciliation & controls',
+        projectLabel: 'AUDIT & FINANCIAL SCENARIOS',
+        projectDesc: 'Case evaluations, fiscal closes, reporting cycles & risk management',
+        behavioralLabel: 'BEHAVIORAL & STAKEHOLDER MANAGEMENT',
+        behavioralDesc: 'Integrity, cross-department communication, audit defense & executive reporting'
+      };
+    }
+    return {
+      techLabel: 'DOMAIN KNOWLEDGE',
+      techDesc: 'Core professional competencies, industry standards & specialized methodologies',
+      projectLabel: 'ROLE SCENARIOS & EXPERIENCE DEEP DIVE',
+      projectDesc: 'Real-world workplace scenarios, project impact & problem resolution',
+      behavioralLabel: 'BEHAVIORAL & SITUATIONAL',
+      behavioralDesc: 'STAR-method questions evaluating judgment, collaboration & leadership'
+    };
+  };
+
   const handleGenerate = async (e, item) => {
     e.stopPropagation();
     setLoadingId(item.id);
     try {
-      const result = await generateInterviewQuestions(item.resumeText, item.jobDescription, item.companyMode);
+      const context = {
+        role: item.jobMatch?.targetRole || item.agentResults?.ats?.detectedRole || item.topic,
+        domain: item.jobMatch?.targetDomain || item.agentResults?.ats?.detectedDomain || item.targetDomain,
+      };
+      const result = await generateInterviewQuestions(item.resumeText, item.jobDescription, item.companyMode, context);
       
       const updatedArchives = archives.map(a => 
         a.id === item.id ? { ...a, interviewData: result } : a
@@ -69,9 +126,9 @@ export default function InterviewSection({ initialSession }) {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-2xl w-full">
             {[
-              { icon: 'psychology',    label: 'Behavioral',      color: '#8b5cf6', desc: 'STAR-method questions from your experience' },
-              { icon: 'code',          label: 'Technical',       color: '#3b82f6', desc: 'Tech stack & problem-solving deep dives' },
-              { icon: 'folder_open',   label: 'Project-Specific', color: '#22C55E', desc: 'Questions about your actual projects' },
+              { icon: 'psychology',    label: 'Behavioral',            color: '#8b5cf6', desc: 'STAR-method questions from your career experience' },
+              { icon: 'school',        label: 'Domain Knowledge',       color: '#3b82f6', desc: 'Industry standards, domain depth & scenario deep dives' },
+              { icon: 'folder_open',   label: 'Experience & Scenarios', color: '#22C55E', desc: 'Role-specific challenges, cases & practical experience' },
             ].map(({ icon, label, color, desc }) => (
               <div key={label} className="bg-[#171A20] border border-[#2D2F36] rounded-xl p-4 text-left">
                 <div className="flex items-center gap-2 mb-2">
@@ -106,6 +163,8 @@ export default function InterviewSection({ initialSession }) {
           const company = item.companyMode && item.companyMode !== 'general'
             ? item.companyMode.charAt(0).toUpperCase() + item.companyMode.slice(1)
             : 'General';
+          const domain = item.jobMatch?.targetDomain || item.agentResults?.ats?.detectedDomain || item.targetDomain || '';
+          const labels = getDomainQuestionLabels(domain);
           
           return (
             <div key={item.id} className="interview-card bg-[#171A20] border border-[#2D2F36] rounded-xl overflow-hidden transition-all duration-200">
@@ -125,6 +184,11 @@ export default function InterviewSection({ initialSession }) {
                       <span className="material-symbols-outlined text-[10px]">business</span>
                       {company}
                     </span>
+                    {domain && (
+                      <span className="inline-flex items-center gap-1 bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30 px-2 py-0.5 rounded text-[10px] font-label-caps font-semibold">
+                        {domain}
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-base text-gray-200 font-headline-md leading-snug line-clamp-1" title={item.topic || item.jobDescription}>
                     {item.topic || 'Interview Prep'}
@@ -163,9 +227,9 @@ export default function InterviewSection({ initialSession }) {
                 <div className="p-5 md:p-8 border-t border-[#27272A] bg-[#09090B]">
                   <div className="grid grid-cols-1 gap-6">
                     {[
-                      { key: 'behavioral',     label: 'BEHAVIORAL',     color: '#8b5cf6', data: item.interviewData.behavioral },
-                      { key: 'technical',      label: 'TECHNICAL',      color: '#3b82f6', data: item.interviewData.technical },
-                      { key: 'projectSpecific',label: 'PROJECT-SPECIFIC',color: '#22C55E', data: item.interviewData.projectSpecific },
+                      { key: 'behavioral',     label: labels.behavioralLabel, color: '#8b5cf6', data: item.interviewData.behavioral },
+                      { key: 'technical',      label: labels.techLabel,       color: '#3b82f6', data: item.interviewData.technical },
+                      { key: 'projectSpecific',label: labels.projectLabel,    color: '#22C55E', data: item.interviewData.projectSpecific },
                     ].map(({ key, label, color, data }) => (
                       <div key={key} className="bg-[#171A20] border border-[#2D2F36] rounded-xl p-5">
                         <div className="flex items-center gap-2 mb-4">
@@ -225,7 +289,9 @@ export default function InterviewSection({ initialSession }) {
       </div>
 
       {activeSubTab === 'MOCK' ? (
-        <MockInterviewSection initialSession={initialSession} onViewKit={() => setActiveSubTab('KIT')} />
+        <MockInterviewErrorBoundary onViewKit={() => setActiveSubTab('KIT')}>
+          <MockInterviewSection initialSession={initialSession} onViewKit={() => setActiveSubTab('KIT')} />
+        </MockInterviewErrorBoundary>
       ) : (
         renderQuestionKit()
       )}

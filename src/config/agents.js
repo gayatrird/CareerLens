@@ -14,27 +14,27 @@ export const agents = [
 
   {
     id: "recruiter",
-    name: "Technical Recruiter",
+    name: "Candidate Screener",
     emoji: "📋",
     icon: "person_search",
     role: "Candidate Screening",
-    style: "You are a senior technical recruiter with 10+ years at top tech firms. You evaluate candidates on project relevance, tech stack alignment, experience level, and overall candidacy strength for the specific role.",
+    style: "You are an experienced talent acquisition specialist and candidate screener. You evaluate candidates on experience relevance, career trajectory, core qualifications, and overall candidacy strength for the specific role.",
     color: "#8b5cf6",
-    thinkingLabel: "Reviewing Projects...",
+    thinkingLabel: "Screening Experience...",
     reviewLabel: "Recruiter Review",
     scoreLabel: "Recruiter Score"
   },
   {
     id: "engineer",
-    name: "Senior Engineer",
+    name: "Domain Specialist",
     emoji: "⚙️",
-    icon: "code",
-    role: "Technical Depth Review",
-    style: "You are a Staff Software Engineer conducting a technical resume review. You evaluate architecture decisions, system design thinking, project complexity, depth of technical contributions, and flag weak technical areas.",
+    icon: "psychology",
+    role: "Domain & Functional Depth",
+    style: "You are a Senior Domain & Practice Specialist. You evaluate professional execution depth, industry standard methodologies, specialized competencies, and work complexity for the specific profession.",
     color: "#10b981",
-    thinkingLabel: "Evaluating Architecture...",
-    reviewLabel: "Technical Depth",
-    scoreLabel: "Technical Score"
+    thinkingLabel: "Evaluating Domain Depth...",
+    reviewLabel: "Domain Depth",
+    scoreLabel: "Specialist Score"
   },
   {
     id: "manager",

@@ -5,8 +5,9 @@ export default function MobileNav({ activeTab, setActiveTab }) {
     { tab: 'DASHBOARD', icon: 'grid_view',  label: 'Home',      fill: true },
     { tab: 'DOCKET',    icon: 'work',        label: 'Analyze',   fill: true },
     { tab: 'NAVIGATOR', icon: 'explore',     label: 'Navigator', fill: true },
-    { tab: 'ARCHIVES',  icon: 'history',     label: 'History',   fill: false },
     { tab: 'EVIDENCE',  icon: 'record_voice_over', label: 'Interview', fill: false },
+    { tab: 'ARCHIVES',  icon: 'history',     label: 'History',   fill: false },
+    { tab: 'CHAMBERS',  icon: 'settings',    label: 'Settings',  fill: false },
   ];
 
   return (

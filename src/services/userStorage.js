@@ -1,4 +1,4 @@
-import { auth } from './firebase';
+import { auth } from './firebase.js';
 
 /**
  * Centralized User Storage Helper for CareerLens
@@ -12,13 +12,27 @@ export function getUserUid(explicitUid) {
   return auth?.currentUser?.uid || 'anonymous';
 }
 
-function resumeHash(text) {
+function legacyResumeHash(text) {
   if (!text) return 'empty';
   let h = 0;
   for (let i = 0; i < Math.min(text.length, 500); i++) {
     h = ((h << 5) - h + text.charCodeAt(i)) | 0;
   }
   return Math.abs(h).toString(36);
+}
+
+export function getResumeFingerprint(text) {
+  if (!text || typeof text !== 'string') return 'empty';
+  const clean = text.trim();
+  const len = clean.length;
+  let h1 = 0x811c9dc5;
+  let h2 = 5381;
+  for (let i = 0; i < len; i++) {
+    const code = clean.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = ((h2 << 5) + h2 + code) | 0;
+  }
+  return `fp_${len.toString(36)}_${Math.abs(h1).toString(36)}_${Math.abs(h2).toString(36)}`;
 }
 
 // ─── Key Builders ─────────────────────────────────────────────────────────────
@@ -30,7 +44,7 @@ export function getStorageKey(type, explicitUid) {
 
 export function getNavigatorCacheKey(resumeText, explicitUid) {
   const uid = getUserUid(explicitUid);
-  return `careerlens_user_${uid}_navigator_${resumeHash(resumeText)}`;
+  return `careerlens_user_${uid}_navigator_${getResumeFingerprint(resumeText)}`;
 }
 
 // ─── Latest Analysis ─────────────────────────────────────────────────────────
@@ -116,21 +130,22 @@ export function setStoredMockInterviews(data, explicitUid) {
 export function getStoredNavigator(resumeText, explicitUid) {
   try {
     const uid = getUserUid(explicitUid);
-    if (resumeText) {
-      const directKey = getNavigatorCacheKey(resumeText, uid);
-      const raw = localStorage.getItem(directKey);
-      if (raw) return JSON.parse(raw);
+    if (!resumeText || typeof resumeText !== 'string' || resumeText.trim().length === 0) {
+      return null;
     }
 
-    // Fallback: search across this user's stored navigator keys
-    const prefix = `careerlens_user_${uid}_navigator_`;
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(prefix)) {
-        const raw = localStorage.getItem(k);
-        if (raw) return JSON.parse(raw);
-      }
-    }
+    // 1. Direct lookup by robust content fingerprint
+    const directKey = getNavigatorCacheKey(resumeText, uid);
+    const raw = localStorage.getItem(directKey);
+    if (raw) return JSON.parse(raw);
+
+    // 2. Backward compatibility: check legacy 500-char hash key for this specific resume
+    const legacyKey = `careerlens_user_${uid}_navigator_${legacyResumeHash(resumeText)}`;
+    const legacyRaw = localStorage.getItem(legacyKey);
+    if (legacyRaw) return JSON.parse(legacyRaw);
+
+    // Explicitly return null if no cached result exists for this specific resume.
+    // Never fall back to another resume's cached result!
     return null;
   } catch {
     return null;
@@ -139,11 +154,16 @@ export function getStoredNavigator(resumeText, explicitUid) {
 
 export function setStoredNavigator(resumeText, data, explicitUid) {
   try {
-    const key = getNavigatorCacheKey(resumeText, explicitUid);
+    if (!resumeText || typeof resumeText !== 'string') return;
+    const uid = getUserUid(explicitUid);
+    const directKey = getNavigatorCacheKey(resumeText, uid);
+    const legacyKey = `careerlens_user_${uid}_navigator_${legacyResumeHash(resumeText)}`;
+
     if (!data) {
-      localStorage.removeItem(key);
+      localStorage.removeItem(directKey);
+      localStorage.removeItem(legacyKey);
     } else {
-      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(directKey, JSON.stringify(data));
     }
   } catch (err) {
     console.warn('Failed to store navigator cache', err);
@@ -159,6 +179,83 @@ export function clearUserHistory(explicitUid) {
     localStorage.removeItem(getStorageKey('last_analysis', uid));
   } catch (err) {
     console.warn('Failed to clear user history', err);
+  }
+}
+
+// ─── User Motion Preferences ──────────────────────────────────────────────────
+
+export function getStoredUserMotion(explicitUid) {
+  try {
+    const uid = getUserUid(explicitUid);
+    const key = `careerlens_user_${uid}_reduce_motion`;
+    const saved = localStorage.getItem(key);
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    // Check system prefers-reduced-motion fallback
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function setStoredUserMotion(enabled, explicitUid) {
+  try {
+    const uid = getUserUid(explicitUid);
+    const key = `careerlens_user_${uid}_reduce_motion`;
+    localStorage.setItem(key, enabled ? 'true' : 'false');
+    if (typeof document !== 'undefined') {
+      if (enabled) {
+        document.documentElement.setAttribute('data-reduce-motion', 'true');
+      } else {
+        document.documentElement.removeAttribute('data-reduce-motion');
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to store reduce motion preference', err);
+  }
+}
+
+// ─── User Scoped Data Export & Wipe ───────────────────────────────────────────
+
+export function exportAllUserData(explicitUid) {
+  const uid = getUserUid(explicitUid);
+  return {
+    app: 'CareerLens',
+    version: '2.0',
+    exportedAt: new Date().toISOString(),
+    user: uid,
+    preferences: {
+      reduceMotion: getStoredUserMotion(uid),
+    },
+    lastAnalysis: getStoredLastAnalysis(uid),
+    archives: getStoredArchives(uid),
+    mockInterviews: getStoredMockInterviews(uid),
+  };
+}
+
+export function clearAllUserData(explicitUid) {
+  try {
+    const uid = getUserUid(explicitUid);
+    clearUserHistory(uid);
+    localStorage.removeItem(getStorageKey('mock_interviews', uid));
+    localStorage.removeItem(`careerlens_user_${uid}_reduce_motion`);
+
+    // Clean user navigator caches
+    const prefix = `careerlens_user_${uid}_navigator_`;
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch (err) {
+    console.warn('Failed to clear all user data', err);
   }
 }
 

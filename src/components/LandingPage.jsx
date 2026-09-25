@@ -59,9 +59,22 @@ export default function LandingPage({ onGetStarted, onSignIn }) {
             See Your Career<br />Clearly. <span className="text-[#4F7DF3]">Make Every Move Smarter.</span>
           </h1>
           
-          <p className="text-lg sm:text-xl text-[#A1A1AA] max-w-xl mb-10 leading-relaxed">
-            Match your resume to the right jobs, discover your ideal career path, and prepare for interviews with AI-powered guidance.
+          <p className="text-lg sm:text-xl text-[#A1A1AA] max-w-xl mb-6 leading-relaxed">
+            Match your resume to the right jobs, discover your ideal career path, and prepare for interviews with AI-powered guidance across all professional domains.
           </p>
+          
+          {/* Supported Domains Pills */}
+          <div className="flex flex-wrap items-center gap-2 mb-8">
+            <span className="text-xs text-[#71717A] mr-1 font-medium">Built for:</span>
+            {['Technology', 'Healthcare', 'Education', 'Finance', 'Operations'].map((domain) => (
+              <span
+                key={domain}
+                className="bg-[#171A20] border border-[#2D2F36] text-[#A1A1AA] hover:text-[#FAFAFA] hover:border-[#4F7DF3]/40 text-xs px-2.5 py-1 rounded-lg transition-colors"
+              >
+                {domain}
+              </span>
+            ))}
+          </div>
           
           <div className="w-full sm:w-auto">
             <button 
@@ -201,7 +214,7 @@ export default function LandingPage({ onGetStarted, onSignIn }) {
               </div>
               <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">AI Resume & Job Matching</h3>
               <p className="text-[#A1A1AA] leading-relaxed text-sm">
-                Get your resume reviewed by a simulated panel: ATS bot, Tech Recruiter, and Hiring Manager. Understand exactly how different roles view your application.
+                Get your resume reviewed by a simulated panel: ATS screener, Candidate Screener, and Domain Specialist. Understand exactly how different evaluators view your application.
               </p>
             </div>
 
@@ -223,7 +236,7 @@ export default function LandingPage({ onGetStarted, onSignIn }) {
               </div>
               <h3 className="text-xl font-bold text-[#FAFAFA] mb-3">Interview Preparation Kit</h3>
               <p className="text-[#A1A1AA] leading-relaxed text-sm">
-                Don't just pass the resume screen. CareerLens automatically generates behavioral and technical interview questions perfectly tailored to the gaps in your resume and the target JD.
+                Don't just pass the resume screen. CareerLens automatically generates behavioral, domain-specific, and situational interview questions perfectly tailored to your background and target JD.
               </p>
             </div>
           </div>
@@ -291,7 +304,7 @@ export default function LandingPage({ onGetStarted, onSignIn }) {
             Ready to see your career clearly?
           </h2>
           <p className="text-[#A1A1AA] text-lg mb-10 max-w-xl mx-auto">
-            Join engineers and professionals using AI career intelligence to make smarter career moves.
+            Join candidates and professionals across technology, healthcare, education, finance, and operations making smarter career moves.
           </p>
           <button 
             onClick={onGetStarted}
