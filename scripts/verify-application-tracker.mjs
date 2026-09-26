@@ -405,6 +405,395 @@ assert(
   'Location input placeholder is domain-neutral: "e.g. Mumbai, Remote, Pune"'
 );
 
+// ─── 12. STATUS-AWARE APPLICATION DATE LABELS ───
+console.log('\n--- 12. Status-Aware Application Date Labels ---');
+
+const { getStatusDateLabel, formatDate } = await import('../src/services/jobMatch.js');
+const expectedDate = formatDate('2026-09-26');
+
+assert(typeof getStatusDateLabel === 'function', 'getStatusDateLabel function is exported');
+assert(
+  getStatusDateLabel('Saved', '2026-09-26') === `Saved: ${expectedDate}`,
+  `Saved status renders "Saved: ${expectedDate}" (got "${getStatusDateLabel('Saved', '2026-09-26')}")`
+);
+assert(
+  getStatusDateLabel('Applied', '2026-09-26') === `Applied: ${expectedDate}`,
+  `Applied status renders "Applied: ${expectedDate}" (got "${getStatusDateLabel('Applied', '2026-09-26')}")`
+);
+assert(
+  getStatusDateLabel('Interview', '2026-09-26') === `Interview: ${expectedDate}`,
+  `Interview status renders "Interview: ${expectedDate}" (got "${getStatusDateLabel('Interview', '2026-09-26')}")`
+);
+assert(
+  getStatusDateLabel('Offer', '2026-09-26') === `Offer: ${expectedDate}`,
+  `Offer status renders "Offer: ${expectedDate}" (got "${getStatusDateLabel('Offer', '2026-09-26')}")`
+);
+assert(
+  getStatusDateLabel('Rejected', '2026-09-26') === `Rejected: ${expectedDate}`,
+  `Rejected status renders "Rejected: ${expectedDate}" (got "${getStatusDateLabel('Rejected', '2026-09-26')}")`
+);
+assert(
+  getStatusDateLabel('UnknownStatus', '2026-09-26') === `Added: ${expectedDate}`,
+  `Fallback status renders "Added: ${expectedDate}" (got "${getStatusDateLabel('UnknownStatus', '2026-09-26')}")`
+);
+
+// Verify card footer uses getStatusDateLabel instead of hardcoded Applied: label
+assert(
+  appSectionSrc.includes('getStatusDateLabel(app.status, app.applicationDate)'),
+  'ApplicationsSection card footer calls getStatusDateLabel(app.status, app.applicationDate)'
+);
+assert(
+  !appSectionSrc.includes('<span>Applied: {formatDate(app.applicationDate)}</span>'),
+  'ApplicationsSection does NOT use hardcoded "Applied: {formatDate(...)}" for all statuses'
+);
+
+// ─── 13. SIDEBAR APPLICATIONS COUNT DERIVED FROM USER-SCOPED STORAGE ───
+console.log('\n--- 13. Sidebar Application Count Derived From Storage ---');
+
+assert(sidebarSrc.includes('getStoredApplications'), 'Sidebar.jsx imports getStoredApplications from userStorage');
+assert(!sidebarSrc.includes('<span className="text-xs font-semibold text-[#FAFAFA]">4</span>'), 'Sidebar.jsx does NOT contain hardcoded Applications count "4"');
+assert(sidebarSrc.includes('{applicationsCount}'), 'Sidebar.jsx renders dynamic {applicationsCount}');
+assert(sidebarSrc.includes('getStoredApplications(uid)'), 'Sidebar.jsx queries user-scoped application storage with uid');
+assert(sidebarSrc.includes('careerlens_applications_updated'), 'Sidebar.jsx listens to live storage update events');
+assert(appSrc.includes('user={user}'), 'App.jsx passes user prop to Sidebar');
+
+// Verify counts match user-scoped stored applications
+const alphaAppsCount = getStoredApplications('user_alpha').length;
+const betaAppsCount = getStoredApplications('user_beta').length;
+const anonAppsCount = getStoredApplications('anonymous').length;
+
+assert(alphaAppsCount === 2, `User Alpha has 2 applications in storage (got ${alphaAppsCount})`);
+assert(betaAppsCount === 1, `User Beta has 1 application in storage (got ${betaAppsCount})`);
+assert(anonAppsCount === 0, `Anonymous user has 0 applications in storage (got ${anonAppsCount})`);
+
+// ─── 14. RESUME SELECTOR IN ADD JOB APPLICATION MODAL ───
+console.log('\n--- 14. Resume Selector in Add Job Application Modal ---');
+
+const {
+  getResumeFingerprint,
+  setStoredLastAnalysis,
+  getStoredLastAnalysis,
+  setStoredArchives,
+  findAnalysisForResume,
+} = await import('../src/services/userStorage.js');
+const {
+  loadSavedResumes,
+  saveResume,
+} = await import('../src/services/savedResume.js');
+const {
+  extractJobApplicationPrefill,
+} = await import('../src/services/jobMatch.js');
+
+// 1. Resume selector lists all saved resumes for current user
+const userResumeUid = 'user_resume_test';
+const resumeA = {
+  name: 'Primary_School_Teacher_Sample_Resume.docx',
+  text: 'Gayatri Sharma. Primary School Teacher with 5 years experience in lesson planning, classroom management, and CTET qualified.',
+};
+const resumeB = {
+  name: 'Software_Engineer_Resume.pdf',
+  text: 'Alex Chen. Full Stack Software Engineer with 6 years experience in Node.js, React, PostgreSQL, and cloud deployments.',
+};
+const resumeC_noAnalysis = {
+  name: 'Finance_Accountant_Resume.pdf',
+  text: 'Sarah Jenkins. Staff Accountant with CPA eligibility, US GAAP compliance, and general ledger reconciliation.',
+};
+
+await saveResume(resumeA, userResumeUid);
+await saveResume(resumeB, userResumeUid);
+await saveResume(resumeC_noAnalysis, userResumeUid);
+
+const userSavedList = await loadSavedResumes(userResumeUid);
+assert(userSavedList.length === 3, `Resume selector lists all 3 saved resumes (got ${userSavedList.length})`);
+assert(userSavedList.some(r => r.name === resumeA.name), 'Lists Resume A (Primary School Teacher)');
+assert(userSavedList.some(r => r.name === resumeB.name), 'Lists Resume B (Software Engineer)');
+assert(userSavedList.some(r => r.name === resumeC_noAnalysis.name), 'Lists Resume C (Accountant)');
+
+const selectedA = userSavedList.find(r => r.name === resumeA.name);
+const selectedB = userSavedList.find(r => r.name === resumeB.name);
+const selectedC = userSavedList.find(r => r.name === resumeC_noAnalysis.name);
+
+// Setup analyses for Resume A and Resume B
+const teacherAnalysis = {
+  id: 'ANALYSIS_TEACHER',
+  jobDescription: 'Company: DPS Academy\nSeeking Primary School Teacher for Grade 4 English and Math.',
+  resumeText: resumeA.text,
+  companyMode: 'general',
+  jobMatch: {
+    targetRole: 'Primary School Teacher',
+    targetCompany: 'DPS Academy',
+    targetDomain: 'Education',
+    overallMatch: 88,
+  },
+  agentResults: { ats: { detectedRole: 'Primary School Teacher' } },
+};
+const sweAnalysis = {
+  id: 'ANALYSIS_SWE_LATEST',
+  jobDescription: 'Company: CloudScale\nHiring Senior Software Engineer for backend distributed systems.',
+  resumeText: resumeB.text,
+  companyMode: 'general',
+  jobMatch: {
+    targetRole: 'Senior Software Engineer',
+    targetCompany: 'CloudScale',
+    targetDomain: 'Technology',
+    overallMatch: 95,
+  },
+  agentResults: { ats: { detectedRole: 'Senior Software Engineer' } },
+};
+
+setStoredArchives([teacherAnalysis], userResumeUid);
+setStoredLastAnalysis(sweAnalysis, userResumeUid);
+
+// Form simulation helper matching modal handleSelectResume behavior
+function simulateModalState(initial = {}) {
+  let state = {
+    selectedResume: initial.selectedResume || null,
+    company: initial.company || '',
+    jobTitle: initial.jobTitle || '',
+    location: initial.location || '',
+    applicationDate: initial.applicationDate || '2026-09-26',
+    status: initial.status || 'Saved',
+    jobDescription: initial.jobDescription || '',
+    matchScore: initial.matchScore || '',
+    notes: initial.notes || '',
+    prefillNotice: '',
+  };
+
+  function selectResume(resumeRecord, currentAnalysis = null) {
+    state.selectedResume = resumeRecord;
+    if (!resumeRecord) {
+      state.prefillNotice = '';
+      return;
+    }
+
+    const matchingAnalysis = findAnalysisForResume(resumeRecord, {
+      currentAnalysis,
+      explicitUid: userResumeUid,
+    });
+
+    if (matchingAnalysis) {
+      const prefill = extractJobApplicationPrefill({
+        jobMatch: matchingAnalysis.jobMatch,
+        jobDescription: matchingAnalysis.jobDescription || '',
+        resumeText: matchingAnalysis.resumeText || resumeRecord.text || '',
+        companyMode: matchingAnalysis.companyMode || 'general',
+        agentResults: matchingAnalysis.agentResults || {},
+      });
+
+      state.company = prefill.company || '';
+      state.jobTitle = prefill.jobTitle || '';
+      state.location = prefill.location || '';
+      state.jobDescription = prefill.jobDescription || '';
+      state.matchScore =
+        prefill.matchScore !== null && prefill.matchScore !== undefined
+          ? String(prefill.matchScore)
+          : '';
+      state.prefillNotice = '';
+    } else {
+      state.company = '';
+      state.jobTitle = '';
+      state.location = '';
+      state.jobDescription = '';
+      state.matchScore = '';
+      state.prefillNotice = 'No analysis found for this resume yet.';
+    }
+  }
+
+  return { state, selectResume };
+}
+
+// 1. Select Resume A → fields populated from A analysis
+const modalSim = simulateModalState();
+modalSim.selectResume(selectedA);
+assert(modalSim.state.selectedResume.name === resumeA.name, 'Select Resume A makes A active');
+assert(modalSim.state.jobTitle === 'Primary School Teacher', `Fields populated with A analysis: Job Title is Primary School Teacher (got "${modalSim.state.jobTitle}")`);
+assert(modalSim.state.matchScore === '88', `Fields populated with A analysis: Match Score is 88 (got "${modalSim.state.matchScore}")`);
+assert(modalSim.state.company === 'DPS Academy', `Fields populated with A analysis: Company is DPS Academy (got "${modalSim.state.company}")`);
+assert(modalSim.state.prefillNotice === '', 'No warning notice when matching analysis is found');
+
+// 2. Select Resume B → A fields are replaced by B fields
+modalSim.selectResume(selectedB);
+assert(modalSim.state.selectedResume.name === resumeB.name, 'Select Resume B makes B active');
+assert(modalSim.state.jobTitle === 'Senior Software Engineer', `A fields replaced by B: Job Title is now Senior Software Engineer (got "${modalSim.state.jobTitle}")`);
+assert(modalSim.state.matchScore === '95', `A fields replaced by B: Match Score is now 95 (got "${modalSim.state.matchScore}")`);
+assert(modalSim.state.company === 'CloudScale', `A fields replaced by B: Company is now CloudScale (got "${modalSim.state.company}")`);
+assert(modalSim.state.jobTitle !== 'Primary School Teacher', 'Resume A data completely replaced, no stale Teacher data');
+
+// 3. Same filename + different content → correct analysis selected
+const resumeDupTech = {
+  name: 'Resume.pdf',
+  text: 'Jane Doe. Senior DevOps Cloud Engineer with Docker, Kubernetes, Terraform, and AWS CI/CD pipelines.',
+};
+const resumeDupNurse = {
+  name: 'Resume.pdf',
+  text: 'Priya Patel. Registered Nurse with acute care bedside experience, BLS and ACLS certification.',
+};
+const dupUserUid = 'user_duplicate_filename_test';
+await saveResume(resumeDupTech, dupUserUid);
+await saveResume(resumeDupNurse, dupUserUid);
+
+const dupList = await loadSavedResumes(dupUserUid);
+assert(dupList.length === 2, `Same filename with different content stores both resumes without clobbering (got ${dupList.length})`);
+const dupFp1 = getResumeFingerprint(resumeDupTech.text);
+const dupFp2 = getResumeFingerprint(resumeDupNurse.text);
+assert(dupFp1 !== dupFp2, 'Different content produces distinct fingerprints');
+
+const devOpsAnalysis = {
+  id: 'ANALYSIS_DEVOPS',
+  jobDescription: 'DevOps position at InfraCorp.',
+  resumeText: resumeDupTech.text,
+  jobMatch: { targetRole: 'DevOps Engineer', overallMatch: 91 },
+};
+const nurseAnalysis = {
+  id: 'ANALYSIS_NURSE',
+  jobDescription: 'Registered Nurse position at CareCenter.',
+  resumeText: resumeDupNurse.text,
+  jobMatch: { targetRole: 'Registered Nurse', overallMatch: 89 },
+};
+setStoredArchives([devOpsAnalysis, nurseAnalysis], dupUserUid);
+
+const lookedUpDevOps = findAnalysisForResume(dupList.find(r => r.id === dupFp1), { explicitUid: dupUserUid });
+const lookedUpNurse = findAnalysisForResume(dupList.find(r => r.id === dupFp2), { explicitUid: dupUserUid });
+assert(lookedUpDevOps.jobMatch.targetRole === 'DevOps Engineer', 'Same filename: DevOps resume matches DevOps analysis');
+assert(lookedUpNurse.jobMatch.targetRole === 'Registered Nurse', 'Same filename: Nurse resume matches Nurse analysis');
+
+// 4. Selected resume with no analysis → analysis fields cleared
+modalSim.selectResume(selectedC);
+assert(modalSim.state.selectedResume.name === resumeC_noAnalysis.name, 'Select Resume C makes C active');
+assert(modalSim.state.jobTitle === '', `Resume C with no analysis clears Job Title (got "${modalSim.state.jobTitle}")`);
+assert(modalSim.state.company === '', `Resume C with no analysis clears Company (got "${modalSim.state.company}")`);
+assert(modalSim.state.location === '', `Resume C with no analysis clears Location (got "${modalSim.state.location}")`);
+assert(modalSim.state.jobDescription === '', `Resume C with no analysis clears Job Description (got "${modalSim.state.jobDescription}")`);
+assert(modalSim.state.matchScore === '', `Resume C with no analysis clears Match Score (got "${modalSim.state.matchScore}")`);
+assert(modalSim.state.prefillNotice === 'No analysis found for this resume yet.', 'Shows neutral notice: "No analysis found for this resume yet."');
+
+// 5. Previous global analysis cannot leak into selected resume
+assert(getStoredLastAnalysis(userResumeUid).jobMatch.targetRole === 'Senior Software Engineer', 'Global latest analysis is SWE');
+const analysisForC = findAnalysisForResume(selectedC, { explicitUid: userResumeUid });
+assert(analysisForC === null, 'Resume C analysis lookup returns null (does NOT leak global SWE analysis)');
+const analysisForA = findAnalysisForResume(selectedA, { explicitUid: userResumeUid });
+assert(analysisForA.jobMatch.targetRole === 'Primary School Teacher', 'Resume A analysis lookup returns Teacher (does NOT leak global SWE analysis)');
+
+// 6. Job Match opens with the current analysis resume
+const currentJobMatchAnalysis = {
+  id: 'ANALYSIS_JM_ACTIVE',
+  resumeText: resumeB.text,
+  jobDescription: 'Software Developer role at Stripe Payments.',
+  jobMatch: {
+    targetRole: 'Software Developer',
+    overallMatch: 92,
+  },
+  companyMode: 'general',
+};
+const jmModalSim = simulateModalState({
+  selectedResume: selectedB,
+  company: 'Stripe Payments',
+  jobTitle: 'Software Developer',
+  matchScore: '92',
+  jobDescription: 'Software Developer role at Stripe Payments.',
+});
+assert(jmModalSim.state.selectedResume.name === resumeB.name, 'Job Match modal opens with Resume B selected');
+assert(jmModalSim.state.company === 'Stripe Payments', 'Job Match modal preserves current company');
+assert(jmModalSim.state.jobTitle === 'Software Developer', 'Job Match modal preserves current target role');
+assert(jmModalSim.state.matchScore === '92', 'Job Match modal preserves current match score');
+
+// 7. Switching resume from Job Match intentionally changes the form context
+jmModalSim.selectResume(selectedA, currentJobMatchAnalysis);
+assert(jmModalSim.state.selectedResume.name === resumeA.name, 'Intentionally switched to Resume A');
+assert(jmModalSim.state.jobTitle === 'Primary School Teacher', `Old Job Match fields replaced by Resume A: Job Title is Primary School Teacher (got "${jmModalSim.state.jobTitle}")`);
+assert(jmModalSim.state.company === 'DPS Academy', `Old Job Match company replaced by Resume A: Company is DPS Academy (got "${jmModalSim.state.company}")`);
+assert(jmModalSim.state.matchScore === '88', `Old Job Match score replaced by Resume A: Match Score is 88 (got "${jmModalSim.state.matchScore}")`);
+
+// 8. Notes are preserved during resume switching
+const notesSim = simulateModalState({
+  notes: 'Follow up with HR regarding benefits package after round 2',
+});
+notesSim.selectResume(selectedA);
+assert(notesSim.state.notes === 'Follow up with HR regarding benefits package after round 2', 'Notes preserved on selecting Resume A');
+notesSim.selectResume(selectedB);
+assert(notesSim.state.notes === 'Follow up with HR regarding benefits package after round 2', 'Notes preserved on selecting Resume B');
+notesSim.selectResume(selectedC);
+assert(notesSim.state.notes === 'Follow up with HR regarding benefits package after round 2', 'Notes preserved on selecting Resume C with no analysis');
+
+// 9. Application Date and Status remain unchanged during resume switching
+const statusSim = simulateModalState({
+  applicationDate: '2026-09-15',
+  status: 'Interview',
+});
+statusSim.selectResume(selectedA);
+assert(statusSim.state.applicationDate === '2026-09-15', 'Application Date preserved on selecting Resume A');
+assert(statusSim.state.status === 'Interview', 'Status preserved on selecting Resume A');
+statusSim.selectResume(selectedB);
+assert(statusSim.state.applicationDate === '2026-09-15', 'Application Date preserved on selecting Resume B');
+assert(statusSim.state.status === 'Interview', 'Status preserved on selecting Resume B');
+statusSim.selectResume(selectedC);
+assert(statusSim.state.applicationDate === '2026-09-15', 'Application Date preserved on selecting Resume C');
+assert(statusSim.state.status === 'Interview', 'Status preserved on selecting Resume C');
+
+// 10. User-scoped resume and analysis isolation
+const isolatedUserAlpha = 'user_isolation_alpha';
+const isolatedUserBeta = 'user_isolation_beta';
+
+await saveResume({ name: 'Alpha_Secret_Resume.pdf', text: 'Alpha user private executive resume.' }, isolatedUserAlpha);
+await saveResume({ name: 'Beta_Private_Resume.docx', text: 'Beta user private engineering resume.' }, isolatedUserBeta);
+
+setStoredArchives([{ resumeText: 'Alpha user private executive resume.', jobMatch: { targetRole: 'Chief Executive' } }], isolatedUserAlpha);
+setStoredArchives([{ resumeText: 'Beta user private engineering resume.', jobMatch: { targetRole: 'Principal Architect' } }], isolatedUserBeta);
+
+const alphaResumes = await loadSavedResumes(isolatedUserAlpha);
+const betaResumes = await loadSavedResumes(isolatedUserBeta);
+
+assert(alphaResumes.length === 1, 'User Alpha has 1 saved resume');
+assert(alphaResumes[0].name === 'Alpha_Secret_Resume.pdf', 'User Alpha sees Alpha resume');
+assert(!alphaResumes.some(r => r.name.includes('Beta')), 'User Alpha CANNOT see User Beta resumes');
+
+assert(betaResumes.length === 1, 'User Beta has 1 saved resume');
+assert(betaResumes[0].name === 'Beta_Private_Resume.docx', 'User Beta sees Beta resume');
+assert(!betaResumes.some(r => r.name.includes('Alpha')), 'User Beta CANNOT see User Alpha resumes');
+
+const alphaAnalysisForBeta = findAnalysisForResume(betaResumes[0], { explicitUid: isolatedUserAlpha });
+assert(alphaAnalysisForBeta === null, 'User Alpha context CANNOT access User Beta analysis');
+const betaAnalysisForAlpha = findAnalysisForResume(alphaResumes[0], { explicitUid: isolatedUserBeta });
+assert(betaAnalysisForAlpha === null, 'User Beta context CANNOT access User Alpha analysis');
+
+// 11. Stored application stores selected resume identity & backward compatibility
+const appWithResume = addStoredApplication({
+  company: 'DPS Academy',
+  jobTitle: 'Primary School Teacher',
+  status: 'Saved',
+  matchScore: 88,
+  resumeId: selectedA.id,
+  resumeName: selectedA.name,
+}, userResumeUid);
+assert(Boolean(appWithResume), 'Application with resume was created');
+assert(appWithResume.resumeId === selectedA.id, `Application stores resumeId (got "${appWithResume.resumeId}")`);
+assert(appWithResume.resumeName === selectedA.name, `Application stores resumeName (got "${appWithResume.resumeName}")`);
+
+const legacyApp = addStoredApplication({
+  company: 'Legacy Corp',
+  jobTitle: 'Data Analyst',
+  status: 'Applied',
+  matchScore: 75,
+}, userResumeUid);
+assert(legacyApp.resumeId === null, 'Legacy application has resumeId defaulted to null');
+assert(legacyApp.resumeName === null, 'Legacy application has resumeName defaulted to null');
+
+// 12. UI Component Architecture Inspection for Resume Selector & Auto-Refresh
+assert(appSectionSrc.includes('RESUME'), 'ApplicationsSection contains "RESUME" section header');
+assert(appSectionSrc.includes('Refresh from selected resume'), 'ApplicationsSection contains "Refresh from selected resume" banner');
+assert(appSectionSrc.includes('+ Upload New Resume'), 'ApplicationsSection contains "+ Upload New Resume" button');
+assert(appSectionSrc.includes('handleModalSelectResume'), 'ApplicationsSection implements handleModalSelectResume');
+
+const addModalSrc = fs.readFileSync(path.resolve('src/components/AddApplicationModal.jsx'), 'utf8');
+assert(addModalSrc.includes('RESUME'), 'AddApplicationModal contains "RESUME" section header');
+assert(addModalSrc.includes('Refresh from selected resume'), 'AddApplicationModal contains "Refresh from selected resume" banner');
+assert(addModalSrc.includes('+ Upload New Resume'), 'AddApplicationModal contains "+ Upload New Resume" button');
+assert(addModalSrc.includes('No analysis found for this resume yet.'), 'AddApplicationModal includes neutral missing analysis notice');
+assert(addModalSrc.includes('handleSelectResume'), 'AddApplicationModal implements handleSelectResume');
+
+const jobMatchSrc = fs.readFileSync(path.resolve('src/components/JobMatchSection.jsx'), 'utf8');
+assert(jobMatchSrc.includes('currentAnalysis={currentAnalysis}'), 'JobMatchSection passes currentAnalysis to AddApplicationModal');
+
 console.log('\n======================================================');
 console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);
 console.log('======================================================\n');
@@ -412,3 +801,5 @@ console.log('======================================================\n');
 if (failed > 0) {
   process.exit(1);
 }
+
+

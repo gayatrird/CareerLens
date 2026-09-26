@@ -470,7 +470,7 @@ export default function App() {
     <div className="text-on-background selection:bg-primary/30 selection:text-primary min-h-screen relative" data-page="app">
       <BackgroundParticles />
       <Header activeTab={activeTab} setActiveTab={setActiveTab} />
-      <Sidebar key={user?.uid || 'anonymous'} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar key={user?.uid || 'anonymous'} activeTab={activeTab} setActiveTab={setActiveTab} user={user} />
 
       {toastVisible && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 bg-[#171A20] border border-[#4F7DF3]/40 text-[#4F7DF3] px-6 py-3 rounded-xl shadow-lg z-50 animate-fade-in-up text-sm font-label-caps tracking-wider">
@@ -578,7 +578,12 @@ export default function App() {
             {analysisState.status === 'complete' && analysisState.recommendation && (
               <div ref={resultRef}>
                 {analysisState.jobMatch && (
-                  <JobMatchSection jobMatch={analysisState.jobMatch} />
+                  <JobMatchSection
+                    jobMatch={analysisState.jobMatch}
+                    currentAnalysis={analysisState}
+                    user={user}
+                    onNavigate={setActiveTab}
+                  />
                 )}
                 <ResultSection
                   recommendation={analysisState.recommendation}

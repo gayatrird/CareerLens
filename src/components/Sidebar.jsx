@@ -1,5 +1,6 @@
 import React from 'react';
-import { getStoredArchives } from '../services/userStorage';
+import { getStoredArchives, getStoredApplications } from '../services/userStorage';
+import { auth } from '../services/firebase';
 
 function useTheme() {
   const [theme, setTheme] = React.useState(() =>
@@ -15,19 +16,41 @@ function useTheme() {
   return theme;
 }
 
-export default function Sidebar({ activeTab, setActiveTab }) {
+export default function Sidebar({ activeTab, setActiveTab, user = null }) {
   const theme = useTheme();
   const isLight = theme === 'light';
   const [historyCount, setHistoryCount] = React.useState(0);
+  const [applicationsCount, setApplicationsCount] = React.useState(0);
 
-  React.useEffect(() => {
+  const uid = user?.uid || auth?.currentUser?.uid || 'anonymous';
+
+  const refreshCounts = React.useCallback(() => {
     try {
-      const saved = getStoredArchives();
+      const saved = getStoredArchives(uid);
       if (Array.isArray(saved)) {
         setHistoryCount(saved.length);
       }
+      const savedApps = getStoredApplications(uid);
+      if (Array.isArray(savedApps)) {
+        setApplicationsCount(savedApps.length);
+      }
     } catch(e) {}
-  }, []);
+  }, [uid]);
+
+  React.useEffect(() => {
+    refreshCounts();
+
+    if (typeof window !== 'undefined') {
+      const handleStorageUpdate = () => refreshCounts();
+      window.addEventListener('storage', handleStorageUpdate);
+      window.addEventListener('careerlens_applications_updated', handleStorageUpdate);
+
+      return () => {
+        window.removeEventListener('storage', handleStorageUpdate);
+        window.removeEventListener('careerlens_applications_updated', handleStorageUpdate);
+      };
+    }
+  }, [refreshCounts, activeTab]);
 
   // Match HireFlow tab styles exactly
   const getTabClass = (tabName) => {
@@ -114,7 +137,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-[#A1A1AA]">Applications</span>
-              <span className="text-xs font-semibold text-[#FAFAFA]">4</span>
+              <span className="text-xs font-semibold text-[#FAFAFA]">{applicationsCount}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-[#A1A1AA]">Interview Ready</span>

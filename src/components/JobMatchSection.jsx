@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { auth } from '../services/firebase';
+import { getStoredApplications, addStoredApplication } from '../services/userStorage';
+import { extractJobApplicationPrefill, findDuplicateApplication } from '../services/jobMatch';
+import AddApplicationModal from './AddApplicationModal';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CareerLens — "Job Match Analysis" results section.
@@ -147,13 +151,56 @@ function getDomainLabels(targetDomain) {
   };
 }
 
-export default function JobMatchSection({ jobMatch }) {
+export default function JobMatchSection({ jobMatch, currentAnalysis = null, user = null, onNavigate = null }) {
   const overall = Number(jobMatch?.overallMatch) || 0;
   const tone = scoreTone(overall);
 
   // Animated ring + count-up (displays the stored score, never recomputes it).
   const [animatedOffset, setAnimatedOffset] = useState(RING_CIRCUMFERENCE);
   const [displayScore, setDisplayScore] = useState(0);
+
+  // Job Match → Applications integration state
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [savedSuccessNotice, setSavedSuccessNotice] = useState('');
+  const [userApps, setUserApps] = useState([]);
+
+  const uid = user?.uid || auth?.currentUser?.uid || 'anonymous';
+
+  useEffect(() => {
+    try {
+      const apps = getStoredApplications(uid);
+      setUserApps(Array.isArray(apps) ? apps : []);
+    } catch (_) {}
+  }, [uid, isAddModalOpen]);
+
+  // Extract prefill strictly from current analysis
+  const prefillData = useMemo(() => {
+    return extractJobApplicationPrefill({
+      jobMatch,
+      jobDescription: currentAnalysis?.jobDescription || '',
+      resumeText: currentAnalysis?.resumeText || '',
+      companyMode: currentAnalysis?.companyMode || 'general',
+      agentResults: currentAnalysis?.agentResults || {},
+    });
+  }, [jobMatch, currentAnalysis]);
+
+  // Real-time duplicate check against user's stored applications
+  const existingApplication = useMemo(() => {
+    return findDuplicateApplication(prefillData, userApps);
+  }, [prefillData, userApps]);
+
+  const handleSaveApplication = (appData) => {
+    const created = addStoredApplication(appData, uid);
+    if (created) {
+      setIsAddModalOpen(false);
+      setSavedSuccessNotice('Application successfully saved to your Applications tracker!');
+      try {
+        const refreshed = getStoredApplications(uid);
+        setUserApps(Array.isArray(refreshed) ? refreshed : []);
+      } catch (_) {}
+      setTimeout(() => setSavedSuccessNotice(''), 5000);
+    }
+  };
 
   useEffect(() => {
     const targetOffset = RING_CIRCUMFERENCE * (1 - overall / 100);
@@ -232,12 +279,29 @@ export default function JobMatchSection({ jobMatch }) {
               <p className="text-[10px] font-label-caps text-[#52525B] tracking-widest mt-0.5">FINAL RESUME ↔ JOB MATCH REPORT</p>
             </div>
           </div>
-          <span
-            className="font-label-caps text-[11px] tracking-widest px-4 py-1.5 rounded-full border shrink-0"
-            style={{ color: tone.color, backgroundColor: `${tone.color}12`, borderColor: `${tone.color}30` }}
-          >
-            {tone.label} · {overall}%
-          </span>
+          <div className="flex items-center gap-3 shrink-0 flex-wrap">
+            <button
+              type="button"
+              id="jobmatch-add-application-header-btn"
+              onClick={() => setIsAddModalOpen(true)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-label-caps tracking-wider border transition-all cursor-pointer ${
+                existingApplication
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                  : 'border-[#4F7DF3]/40 bg-[#4F7DF3]/10 text-[#4F7DF3] hover:bg-[#4F7DF3]/20 shadow-[0_2px_10px_rgba(79,125,243,0.15)]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">
+                {existingApplication ? 'check_circle' : 'bookmark_add'}
+              </span>
+              <span>{existingApplication ? 'In Applications' : 'Add to Applications'}</span>
+            </button>
+            <span
+              className="font-label-caps text-[11px] tracking-widest px-4 py-1.5 rounded-full border shrink-0"
+              style={{ color: tone.color, backgroundColor: `${tone.color}12`, borderColor: `${tone.color}30` }}
+            >
+              {tone.label} · {overall}%
+            </span>
+          </div>
         </div>
 
         {/* Body */}
@@ -367,8 +431,87 @@ export default function JobMatchSection({ jobMatch }) {
               </div>
             )}
           </div>
+
+          {/* ── Add to Applications Action ── */}
+          <div className="pt-6 border-t border-[#27272A] space-y-3">
+            <div className="bg-[#09090B] border border-[#27272A] rounded-xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+              <div className="flex items-start sm:items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-[#4F7DF3]/15 border border-[#4F7DF3]/30 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[#4F7DF3] text-[22px]">business_center</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="font-semibold text-sm text-[#FAFAFA]">Track in Applications Pipeline</h4>
+                    {existingApplication && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-label-caps border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                        <span className="material-symbols-outlined text-[12px]">check</span>
+                        SAVED TO PIPELINE
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-[#71717A] mt-0.5">
+                    Save this analyzed role, current deterministic score ({overall}%), and job details to your Application Tracker.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 w-full md:w-auto shrink-0 justify-end flex-wrap">
+                {existingApplication && onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('APPLICATIONS')}
+                    className="px-3.5 py-2 text-xs font-label-caps tracking-wider text-[#A1A1AA] hover:text-[#FAFAFA] border border-[#27272A] hover:border-[#3F3F46] rounded-xl transition-colors cursor-pointer"
+                  >
+                    View in Applications
+                  </button>
+                )}
+                <button
+                  type="button"
+                  id="jobmatch-add-application-btn"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="bg-[#4F7DF3] hover:bg-[#4069D0] text-white text-xs font-label-caps tracking-wider px-5 py-2.5 rounded-xl transition-all shadow-[0_4px_16px_rgba(79,125,243,0.3)] flex items-center gap-2 cursor-pointer w-full md:w-auto justify-center"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {existingApplication ? 'edit_note' : 'post_add'}
+                  </span>
+                  <span>{existingApplication ? 'Edit or Re-add Application' : 'Add to Applications'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Success Alert */}
+            {savedSuccessNotice && (
+              <div className="bg-emerald-500/15 border border-emerald-500/30 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs text-emerald-300 animate-fade-in-up">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-400 text-[18px]">check_circle</span>
+                  <span>{savedSuccessNotice}</span>
+                </div>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('APPLICATIONS')}
+                    className="text-xs font-semibold text-emerald-300 hover:text-white underline cursor-pointer shrink-0"
+                  >
+                    Go to Applications →
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Prefilled Add Job Application Modal */}
+      <AddApplicationModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onSave={handleSaveApplication}
+        initialData={prefillData}
+        currentAnalysis={currentAnalysis}
+        user={user}
+        existingApplications={userApps}
+        title="Add Job Application"
+      />
     </section>
   );
 }

@@ -1273,6 +1273,7 @@ export function computeJobMatch({ resumeText = '', jobDescription = '', agentRes
     targetRole,
     targetDomain,
     overallMatch,
+    overallScore: overallMatch, // alias for consistency
     atsCompatibility,
     skillsMatch,
     experienceMatch,
@@ -1399,3 +1400,284 @@ export function analyzeJdRequirements(jobDescription = '', resumeText = '', atsR
     candidateYears,
   };
 }
+
+// ─── JOB MATCH → APPLICATIONS INTEGRATION HELPERS ───────────────────────────
+
+/**
+ * Extracts company name if explicitly available in Job Description.
+ * Otherwise returns an empty string.
+ */
+export function extractCompanyFromJd(jobDescription = '') {
+  if (!jobDescription || typeof jobDescription !== 'string') return '';
+  const text = jobDescription.trim();
+  if (!text) return '';
+
+  const BLACKLIST_WORDS = new Set([
+    'about us', 'about the company', 'about the role', 'about our team', 'about',
+    'the company', 'company overview', 'who we are', 'we are', 'our team',
+    'overview', 'job overview', 'job description', 'description', 'requirements',
+    'the role', 'responsibilities', 'qualifications', 'position summary',
+    'role overview', 'summary', 'introduction', 'welcome', 'general', 'location',
+    'full-time', 'part-time', 'contract', 'job type', 'salary', 'benefits'
+  ]);
+
+  const sanitizeCandidate = (raw) => {
+    if (!raw) return '';
+    let cleaned = raw
+      .replace(/^[#*–—\s:"]+/, '')
+      .replace(/[#*–—\s:".]+$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (cleaned.length < 2 || cleaned.length > 50) return '';
+    if (BLACKLIST_WORDS.has(cleaned.toLowerCase())) return '';
+    return cleaned;
+  };
+
+  // 1. Explicit labeled lines
+  // e.g., "Company: Acme Corp", "Company Name: Apollo Hospitals", "Hospital: Mayo Clinic"
+  const labelMatch = text.match(/(?:^|[\n\r])\s*(?:Company(?:\s+Name)?|Employer|Organization|Hospital|School|Firm|Agency|Clinic|Institution)\s*[:\-–]\s*([^\n\r,;|]+)/i);
+  if (labelMatch && labelMatch[1]) {
+    const candidate = sanitizeCandidate(labelMatch[1]);
+    if (candidate) return candidate;
+  }
+
+  // 2. Phrases like "About Acme Corp:", "About Acme Corp is a..."
+  const aboutMatch = text.match(/(?:^|[\n\r])\s*About\s+([A-Z][A-Za-z0-9&.,'\s]{1,40}?)(?:\s*[:\n]|\s+is\s+(?:a|an|the|hiring|seeking|leading))/m);
+  if (aboutMatch && aboutMatch[1]) {
+    const candidate = sanitizeCandidate(aboutMatch[1]);
+    if (candidate) return candidate;
+  }
+
+  // 3. Phrases like "join the team at Google", "our team at Stripe"
+  const joinMatch = text.match(/(?:join|at)\s+(?:the\s+team\s+at|our\s+team\s+at)\s+([A-Z][A-Za-z0-9&.,'\s]{1,40})/i);
+  if (joinMatch && joinMatch[1]) {
+    const candidate = sanitizeCandidate(joinMatch[1]);
+    if (candidate) return candidate;
+  }
+
+  return '';
+}
+
+/**
+ * Extracts location if explicitly available in Job Description.
+ * Otherwise returns an empty string.
+ */
+export function extractLocationFromJd(jobDescription = '') {
+  if (!jobDescription || typeof jobDescription !== 'string') return '';
+  const text = jobDescription.trim();
+  if (!text) return '';
+
+  const BLACKLIST_LOCATIONS = new Set([
+    'full-time', 'part-time', 'contract', 'permanent', 'immediate',
+    'not specified', 'n/a', 'tbd', 'anywhere', 'competitive', 'negotiable',
+    'requirements', 'overview', 'description', 'role', 'responsibilities'
+  ]);
+
+  const sanitizeCandidate = (raw) => {
+    if (!raw) return '';
+    let cleaned = raw
+      .replace(/^[#*–—\s:"]+/, '')
+      .replace(/[#*–—\s:".]+$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (cleaned.length < 2 || cleaned.length > 60) return '';
+    if (BLACKLIST_LOCATIONS.has(cleaned.toLowerCase())) return '';
+    return cleaned;
+  };
+
+  // 1. Explicit labeled lines
+  // e.g., "Location: New York, NY", "Job Location: Remote", "Work Location - Mumbai"
+  const labelMatch = text.match(/(?:^|[\n\r])\s*(?:Job\s+Location|Work\s+Location|Office\s+Location|Base\s+Location|Location|City)\s*[:\-–]\s*([^\n\r;|]+)/i);
+  if (labelMatch && labelMatch[1]) {
+    const candidate = sanitizeCandidate(labelMatch[1]);
+    if (candidate) return candidate;
+  }
+
+  // 2. Workplace type / arrangement lines
+  const workplaceMatch = text.match(/(?:^|[\n\r])\s*(?:Workplace(?:\s+Type)?|Work\s+Arrangement)\s*[:\-–]\s*([^\n\r;|]+)/i);
+  if (workplaceMatch && workplaceMatch[1]) {
+    const candidate = sanitizeCandidate(workplaceMatch[1]);
+    if (candidate) return candidate;
+  }
+
+  // 3. Explicit standalone Remote declarations
+  const remoteMatch = text.match(/(?:^|[\n\r])\s*(100%\s+Remote|Fully\s+Remote|Remote\s+Only)\b/i);
+  if (remoteMatch && remoteMatch[1]) {
+    return sanitizeCandidate(remoteMatch[1]) || 'Remote';
+  }
+
+  return '';
+}
+
+/**
+ * Duplicate check for job applications:
+ * Matches on same company + same job title + same relevant job description.
+ */
+export function findDuplicateApplication(appCandidate, existingApps = []) {
+  if (!appCandidate || !Array.isArray(existingApps) || existingApps.length === 0) {
+    return null;
+  }
+
+  const norm = (str) => (str || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const targetCompany = norm(appCandidate.company || appCandidate.companyName);
+  const targetTitle = norm(appCandidate.jobTitle);
+  const targetJd = norm(appCandidate.jobDescription);
+
+  if (!targetCompany || !targetTitle) {
+    return null;
+  }
+
+  return (
+    existingApps.find((existing) => {
+      const exCompany = norm(existing.company || existing.companyName);
+      const exTitle = norm(existing.jobTitle);
+      const exJd = norm(existing.jobDescription);
+
+      if (exCompany !== targetCompany) return false;
+      if (exTitle !== targetTitle) return false;
+
+      // Relevant Job Description match
+      // If both have no JD: matches
+      if (!targetJd && !exJd) return true;
+      // If both have JD: check exact match or substantial prefix/substring match
+      if (targetJd && exJd) {
+        if (targetJd === exJd) return true;
+        const prefixLen = Math.min(100, Math.min(targetJd.length, exJd.length));
+        if (prefixLen >= 30 && targetJd.slice(0, prefixLen) === exJd.slice(0, prefixLen)) {
+          return true;
+        }
+        if (targetJd.includes(exJd) || exJd.includes(targetJd)) {
+          return true;
+        }
+      }
+      return false;
+    }) || null
+  );
+}
+
+/**
+ * Extracts prefill fields strictly from the CURRENT analysis only.
+ * Guaranteed zero leakage of previous analyses, previous resumes, or stale caches.
+ */
+export function extractJobApplicationPrefill({
+  jobMatch = null,
+  jobDescription = '',
+  resumeText = '',
+  companyMode = 'general',
+  agentResults = {},
+} = {}) {
+  const jd = typeof jobDescription === 'string' ? jobDescription : '';
+  const resume = typeof resumeText === 'string' ? resumeText : '';
+
+  // 1. Job Title from CURRENT analysis
+  let jobTitle = (jobMatch?.targetRole || agentResults?.ats?.detectedRole || '').trim();
+  if (!jobTitle) {
+    const detected = detectJobDomain(jd, resume, agentResults?.ats);
+    jobTitle = (detected?.role || '').trim();
+  }
+
+  // 2. Job Match Score from CURRENT deterministic match
+  let matchScore = null;
+  const rawScore = jobMatch?.overallMatch ?? jobMatch?.overallScore;
+  if (typeof rawScore === 'number' && !isNaN(rawScore)) {
+    matchScore = Math.max(0, Math.min(100, Math.round(rawScore)));
+  }
+
+  // 3. Job Description from CURRENT text
+  const currentJd = jd.trim();
+
+  // 4. Application Date (today)
+  const applicationDate = new Date().toISOString().split('T')[0];
+
+  // 5. Status (Saved)
+  const status = 'Saved';
+
+  // 6. Notes (blank by default)
+  const notes = '';
+
+  // 7. Company (CURRENT analysis / JD only, otherwise blank)
+  let company = (jobMatch?.targetCompany || '').trim();
+  if (!company && companyMode && companyMode !== 'general') {
+    const companyModeMap = {
+      google: 'Google',
+      amazon: 'Amazon',
+      microsoft: 'Microsoft',
+      jpmorgan: 'JPMorgan Chase',
+      barclays: 'Barclays',
+      tcs: 'TCS',
+      accenture: 'Accenture',
+      infosys: 'Infosys',
+      capgemini: 'Capgemini',
+    };
+    company = companyModeMap[companyMode.toLowerCase()] || (companyMode.charAt(0).toUpperCase() + companyMode.slice(1));
+  }
+  if (!company && jd) {
+    company = extractCompanyFromJd(jd);
+  }
+
+  // 8. Location (explicitly available from JD, otherwise blank)
+  let location = (jobMatch?.targetLocation || '').trim();
+  if (!location && jd) {
+    location = extractLocationFromJd(jd);
+  }
+
+  return {
+    company: company || '',
+    jobTitle: jobTitle || '',
+    location: location || '',
+    applicationDate,
+    status,
+    matchScore,
+    jobDescription: currentJd,
+    notes,
+  };
+}
+
+/**
+ * Format YYYY-MM-DD or timestamp to human readable date e.g. "Sep 26, 2026".
+ */
+export function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    const [y, m, d] = String(dateStr).split('-');
+    if (y && m && d) {
+      const date = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Returns a status-aware date label for applications:
+ * Saved → "Saved: [date]"
+ * Applied → "Applied: [date]"
+ * Interview → "Interview: [date]"
+ * Offer → "Offer: [date]"
+ * Rejected → "Rejected: [date]"
+ * Fallback → "Added: [date]"
+ */
+export function getStatusDateLabel(status, dateStr) {
+  const formatted = formatDate(dateStr);
+  switch (status) {
+    case 'Saved':
+      return `Saved: ${formatted}`;
+    case 'Applied':
+      return `Applied: ${formatted}`;
+    case 'Interview':
+      return `Interview: ${formatted}`;
+    case 'Offer':
+      return `Offer: ${formatted}`;
+    case 'Rejected':
+      return `Rejected: ${formatted}`;
+    default:
+      return `Added: ${formatted}`;
+  }
+}
+
+export { findAnalysisForResume } from './userStorage.js';
+
+
+

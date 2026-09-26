@@ -98,6 +98,75 @@ export function setStoredArchives(data, explicitUid) {
     console.warn('Failed to store archives', err);
   }
 }
+// ─── Resume-Linked Analysis Lookup ───────────────────────────────────────────
+
+/**
+ * Find the analysis specifically belonging to a given resume.
+ * Strict isolation: checks only this resume's content fingerprint.
+ * Never falls back to another resume's analysis.
+ */
+export function findAnalysisForResume(resume, options = {}) {
+  if (!resume) return null;
+  const { currentAnalysis = null, explicitUid = null } = options;
+  const resumeText = resume.text || (typeof resume === 'string' ? resume : '');
+  const resumeFp = resume.id || (resumeText ? getResumeFingerprint(resumeText) : null);
+  if (!resumeFp && !resumeText) return null;
+
+  // 1. Current in-memory analysis (e.g. active Job Match run)
+  if (currentAnalysis) {
+    const curFp =
+      currentAnalysis.resumeId ||
+      currentAnalysis.resumeFp ||
+      (currentAnalysis.resumeText ? getResumeFingerprint(currentAnalysis.resumeText) : null);
+    if (
+      (curFp && resumeFp && curFp === resumeFp) ||
+      (currentAnalysis.resumeText && resumeText && getResumeFingerprint(currentAnalysis.resumeText) === getResumeFingerprint(resumeText))
+    ) {
+      return currentAnalysis;
+    }
+  }
+
+  // 2. Latest stored analysis for this user
+  try {
+    const last = getStoredLastAnalysis(explicitUid);
+    if (last) {
+      const lastFp =
+        last.resumeId ||
+        last.resumeFp ||
+        (last.resumeText ? getResumeFingerprint(last.resumeText) : null);
+      if (
+        (lastFp && resumeFp && lastFp === resumeFp) ||
+        (last.resumeText && resumeText && getResumeFingerprint(last.resumeText) === getResumeFingerprint(resumeText))
+      ) {
+        return last;
+      }
+    }
+  } catch (_) {}
+
+  // 3. Stored user history/archives (most recent first)
+  try {
+    const archives = getStoredArchives(explicitUid);
+    if (Array.isArray(archives)) {
+      for (let i = archives.length - 1; i >= 0; i--) {
+        const arch = archives[i];
+        if (arch) {
+          const archFp =
+            arch.resumeId ||
+            arch.resumeFp ||
+            (arch.resumeText ? getResumeFingerprint(arch.resumeText) : null);
+          if (
+            (archFp && resumeFp && archFp === resumeFp) ||
+            (arch.resumeText && resumeText && getResumeFingerprint(arch.resumeText) === getResumeFingerprint(resumeText))
+          ) {
+            return arch;
+          }
+        }
+      }
+    }
+  } catch (_) {}
+
+  return null;
+}
 
 // ─── Mock Interviews ─────────────────────────────────────────────────────────
 
@@ -240,6 +309,13 @@ export function setStoredApplications(data, explicitUid) {
     const key = getStorageKey('job_applications', explicitUid);
     const list = Array.isArray(data) ? data : [];
     localStorage.setItem(key, JSON.stringify(list));
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      try {
+        window.dispatchEvent(new CustomEvent('careerlens_applications_updated', {
+          detail: { uid: getUserUid(explicitUid), count: list.length }
+        }));
+      } catch (_) {}
+    }
   } catch (err) {
     console.warn('Failed to store job applications', err);
   }
@@ -264,6 +340,8 @@ export function addStoredApplication(appData, explicitUid) {
       status: appData?.status || 'Saved',
       matchScore: typeof appData?.matchScore === 'number' ? appData.matchScore : null,
       notes: (appData?.notes || '').trim(),
+      resumeId: appData?.resumeId || null,
+      resumeName: appData?.resumeName || null,
       createdAt: now,
       updatedAt: now,
     };

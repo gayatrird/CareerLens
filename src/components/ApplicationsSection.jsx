@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { auth, onAuthStateChanged } from '../services/firebase';
 import {
   getStoredApplications,
@@ -6,7 +6,20 @@ import {
   updateStoredApplication,
   deleteStoredApplication,
   getStoredLastAnalysis,
+  getResumeFingerprint,
 } from '../services/userStorage';
+import {
+  findDuplicateApplication,
+  extractJobApplicationPrefill,
+  formatDate,
+  getStatusDateLabel,
+  findAnalysisForResume,
+} from '../services/jobMatch';
+import {
+  loadSavedResumes,
+  saveResume,
+  parseResumeFile,
+} from '../services/savedResume';
 
 const STATUS_OPTIONS = ['Saved', 'Applied', 'Interview', 'Offer', 'Rejected'];
 
@@ -60,19 +73,19 @@ function formatRelativeTime(ts) {
   return new Date(time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  try {
-    const [y, m, d] = dateStr.split('-');
-    if (y && m && d) {
-      const date = new Date(parseInt(y), parseInt(m) - 1, parseInt(d));
-      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-    }
-    return dateStr;
-  } catch {
-    return dateStr;
-  }
+function formatLastUsed(ts) {
+  if (!ts) return 'Recently';
+  const diffSec = Math.floor((Date.now() - Number(ts)) / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
+
 
 function useTheme() {
   const [theme, setTheme] = useState(() =>
@@ -125,6 +138,16 @@ export default function ApplicationsSection({ onNavigate }) {
   const [formNotes, setFormNotes] = useState('');
   const [formMatchScore, setFormMatchScore] = useState('');
   const [formErrors, setFormErrors] = useState({});
+  const [formDuplicateConfirm, setFormDuplicateConfirm] = useState(false);
+
+  // Resume selector state inside Add modal
+  const addFileInputRef = useRef(null);
+  const [modalSavedResumes, setModalSavedResumes] = useState([]);
+  const [modalSelectedResume, setModalSelectedResume] = useState(null);
+  const [modalResumeDropdownOpen, setModalResumeDropdownOpen] = useState(false);
+  const [modalIsUploading, setModalIsUploading] = useState(false);
+  const [modalUploadError, setModalUploadError] = useState('');
+  const [modalPrefillNotice, setModalPrefillNotice] = useState('');
 
   // Editable notes state inside the View Modal
   const [modalNotes, setModalNotes] = useState('');
@@ -160,26 +183,60 @@ export default function ApplicationsSection({ onNavigate }) {
     }
   }, [viewingApp]);
 
-  // Pre-fill helper from latest analysis if form fields are empty
-  const handlePrefillFromAnalysis = () => {
-    try {
-      const lastAnalysis = getStoredLastAnalysis(currentUser?.uid);
-      if (lastAnalysis) {
-        const role = lastAnalysis.jobMatch?.targetRole || lastAnalysis.agentResults?.ats?.detectedRole || '';
-        const company = lastAnalysis.jobMatch?.targetCompany || (lastAnalysis.companyMode && lastAnalysis.companyMode !== 'general' ? lastAnalysis.companyMode : '');
-        const score = lastAnalysis.jobMatch?.overallScore || lastAnalysis.agentResults?.ats?.score || '';
-        const jd = lastAnalysis.jobDescription || '';
+  // Select resume helper with automatic form refresh and neutral fallback
+  const handleModalSelectResume = (resumeRecord) => {
+    setModalSelectedResume(resumeRecord);
+    setModalResumeDropdownOpen(false);
 
-        if (company && !formCompany) setFormCompany(company.charAt(0).toUpperCase() + company.slice(1));
-        if (role && !formJobTitle) setFormJobTitle(role);
-        if (score && !formMatchScore) setFormMatchScore(String(score));
-        if (jd && !formJobDescription) setFormJobDescription(jd);
-      }
-    } catch (_) {}
+    if (!resumeRecord) {
+      setModalPrefillNotice('');
+      return;
+    }
+
+    const uid = currentUser?.uid || 'anonymous';
+    const matchingAnalysis = findAnalysisForResume(resumeRecord, {
+      explicitUid: uid,
+    });
+
+    if (matchingAnalysis) {
+      const prefill = extractJobApplicationPrefill({
+        jobMatch: matchingAnalysis.jobMatch,
+        jobDescription: matchingAnalysis.jobDescription || '',
+        resumeText: matchingAnalysis.resumeText || resumeRecord.text || '',
+        companyMode: matchingAnalysis.companyMode || 'general',
+        agentResults: matchingAnalysis.agentResults || {},
+      });
+
+      setFormCompany(prefill.company || '');
+      setFormJobTitle(prefill.jobTitle || '');
+      setFormLocation(prefill.location || '');
+      setFormJobDescription(prefill.jobDescription || '');
+      setFormMatchScore(
+        prefill.matchScore !== null && prefill.matchScore !== undefined
+          ? String(prefill.matchScore)
+          : ''
+      );
+      setModalPrefillNotice('');
+    } else {
+      setFormCompany('');
+      setFormJobTitle('');
+      setFormLocation('');
+      setFormJobDescription('');
+      setFormMatchScore('');
+      setModalPrefillNotice('No analysis found for this resume yet.');
+    }
+  };
+
+  const handleRefreshFromModalResume = () => {
+    if (!modalSelectedResume) {
+      setModalPrefillNotice('Please select a resume first.');
+      return;
+    }
+    handleModalSelectResume(modalSelectedResume);
   };
 
   // 2. Add Application Handler
-  const handleOpenAddModal = () => {
+  const handleOpenAddModal = async () => {
     setFormCompany('');
     setFormJobTitle('');
     setFormLocation('');
@@ -189,11 +246,58 @@ export default function ApplicationsSection({ onNavigate }) {
     setFormNotes('');
     setFormMatchScore('');
     setFormErrors({});
+    setFormDuplicateConfirm(false);
+    setModalResumeDropdownOpen(false);
+    setModalPrefillNotice('');
+    setModalUploadError('');
+
+    const uid = currentUser?.uid || 'anonymous';
+    const resumes = await loadSavedResumes(uid).catch(() => []);
+    const list = Array.isArray(resumes) ? resumes : [];
+    setModalSavedResumes(list);
+    setModalSelectedResume(list.length > 0 ? list[0] : null);
+
     setIsAddModalOpen(true);
   };
 
-  const handleSaveNewApplication = (e) => {
-    e.preventDefault();
+  const handleModalResumeUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const uid = currentUser?.uid || 'anonymous';
+    setModalIsUploading(true);
+    setModalUploadError('');
+    try {
+      const parsed = await parseResumeFile(file);
+      await saveResume(parsed, uid);
+      const updatedList = await loadSavedResumes(uid);
+      setModalSavedResumes(updatedList);
+      const newlySaved =
+        updatedList.find((r) => r.id === parsed.id || r.name === parsed.name) ||
+        updatedList[0];
+      handleModalSelectResume(newlySaved);
+    } catch (err) {
+      setModalUploadError(err.message || 'Failed to upload resume file.');
+    } finally {
+      setModalIsUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  // Real-time duplicate check inside Add modal
+  const currentModalDuplicate = useMemo(() => {
+    if (!isAddModalOpen) return null;
+    return findDuplicateApplication(
+      {
+        company: formCompany,
+        jobTitle: formJobTitle,
+        jobDescription: formJobDescription,
+      },
+      applications
+    );
+  }, [isAddModalOpen, formCompany, formJobTitle, formJobDescription, applications]);
+
+  const handleSaveNewApplication = (e, bypassDuplicate = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     const errors = {};
     if (!formCompany.trim()) {
       errors.company = 'Company name is required';
@@ -217,6 +321,20 @@ export default function ApplicationsSection({ onNavigate }) {
       return;
     }
 
+    const dup = findDuplicateApplication(
+      {
+        company: formCompany.trim(),
+        jobTitle: formJobTitle.trim(),
+        jobDescription: formJobDescription.trim(),
+      },
+      applications
+    );
+
+    if (dup && !bypassDuplicate && !formDuplicateConfirm) {
+      setFormDuplicateConfirm(true);
+      return;
+    }
+
     const uid = currentUser?.uid || 'anonymous';
     const created = addStoredApplication(
       {
@@ -228,6 +346,8 @@ export default function ApplicationsSection({ onNavigate }) {
         jobDescription: formJobDescription.trim(),
         notes: formNotes.trim(),
         matchScore: parsedScore,
+        resumeId: modalSelectedResume?.id || null,
+        resumeName: modalSelectedResume?.name || null,
       },
       uid
     );
@@ -235,6 +355,7 @@ export default function ApplicationsSection({ onNavigate }) {
     if (created) {
       reloadApplications();
       setIsAddModalOpen(false);
+      setFormDuplicateConfirm(false);
     }
   };
 
@@ -559,7 +680,7 @@ export default function ApplicationsSection({ onNavigate }) {
                 {/* Footer Metadata & Actions */}
                 <div className="mt-4 pt-3.5 border-t border-[#27272A] flex items-center justify-between gap-2">
                   <div className="text-[10px] text-[#71717A] flex flex-col">
-                    <span>Applied: {formatDate(app.applicationDate)}</span>
+                    <span>{getStatusDateLabel(app.status, app.applicationDate)}</span>
                     <span className="text-[9px] text-[#52525B]">Updated {formatRelativeTime(app.updatedAt)}</span>
                   </div>
 
@@ -616,20 +737,175 @@ export default function ApplicationsSection({ onNavigate }) {
             </div>
 
             <form onSubmit={handleSaveNewApplication} className="p-6 space-y-4">
-              {/* Optional Prefill Shortcut */}
-              <div className="flex items-center justify-between bg-[#111318] border border-[#27272A] p-2.5 rounded-xl">
-                <span className="text-[11px] text-[#71717A] flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-[15px] text-[#4F7DF3]">auto_awesome</span>
-                  Prefill with data from your latest resume analysis?
-                </span>
-                <button
-                  type="button"
-                  onClick={handlePrefillFromAnalysis}
-                  className="text-xs text-[#4F7DF3] hover:underline font-semibold cursor-pointer"
-                >
-                  Prefill
-                </button>
+              {/* RESUME SELECTOR SECTION */}
+              <div>
+                <label className="font-label-caps text-[#A1A1AA] text-[10px] block mb-1.5 font-semibold">
+                  RESUME
+                </label>
+                <div className="relative">
+                  <div
+                    onClick={() => setModalResumeDropdownOpen((prev) => !prev)}
+                    className="w-full bg-[#111318] border border-[#27272A] hover:border-[#3F3F46] rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span className="material-symbols-outlined text-[#4F7DF3] text-[18px] shrink-0">
+                        description
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-medium text-[#FAFAFA] truncate">
+                          {modalSelectedResume ? modalSelectedResume.name : 'No resume selected'}
+                        </p>
+                        {modalSelectedResume?.lastUsedAt && (
+                          <p className="text-[10px] text-[#71717A] truncate">
+                            Last used • {formatLastUsed(modalSelectedResume.lastUsedAt)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0 text-[#71717A]">
+                      <span className={`material-symbols-outlined text-[18px] transition-transform duration-200 ${modalResumeDropdownOpen ? 'rotate-180' : ''}`}>
+                        expand_more
+                      </span>
+                    </div>
+                  </div>
+
+                  {modalResumeDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-[#171A20] border border-[#27272A] rounded-xl shadow-[0_12px_32px_rgba(0,0,0,0.5)] overflow-hidden animate-fade-in-up">
+                      <div className="max-h-56 overflow-y-auto divide-y divide-[#27272A]/60">
+                        {modalSavedResumes.length === 0 ? (
+                          <div className="p-3 text-xs text-[#71717A] text-center italic">
+                            No saved resumes found
+                          </div>
+                        ) : (
+                          modalSavedResumes.map((r) => {
+                            const isSelected = modalSelectedResume?.id === r.id;
+                            return (
+                              <div
+                                key={r.id || r.name}
+                                onClick={() => handleModalSelectResume(r)}
+                                className={`px-3.5 py-2.5 flex items-center justify-between gap-3 hover:bg-[#4F7DF3]/10 transition-colors cursor-pointer ${
+                                  isSelected ? 'bg-[#4F7DF3]/15' : ''
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  <span
+                                    className={`material-symbols-outlined text-[16px] shrink-0 ${
+                                      isSelected ? 'text-[#22C55E]' : 'text-[#52525B]'
+                                    }`}
+                                    style={isSelected ? { fontVariationSettings: "'FILL' 1" } : {}}
+                                  >
+                                    {isSelected ? 'check_circle' : 'radio_button_unchecked'}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className={`text-xs truncate ${isSelected ? 'text-[#FAFAFA] font-semibold' : 'text-[#D4D4D8]'}`}>
+                                      {r.name}
+                                    </p>
+                                    {r.lastUsedAt && (
+                                      <p className="text-[10px] text-[#71717A] truncate">
+                                        Last used • {formatLastUsed(r.lastUsedAt)}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <span className="text-[10px] text-[#22C55E] font-medium shrink-0">
+                                    Selected
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="p-2 border-t border-[#27272A] bg-[#111318]/50">
+                        <button
+                          type="button"
+                          onClick={() => addFileInputRef.current?.click()}
+                          disabled={modalIsUploading}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-[#4F7DF3] hover:text-[#709BFF] hover:bg-[#4F7DF3]/10 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                          <span>{modalIsUploading ? 'Uploading...' : '+ Upload New Resume'}</span>
+                        </button>
+                        <input
+                          ref={addFileInputRef}
+                          type="file"
+                          accept=".pdf,.docx,.doc,.txt"
+                          onChange={handleModalResumeUpload}
+                          className="hidden"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {modalUploadError && (
+                  <p className="text-[11px] text-red-400 mt-1">{modalUploadError}</p>
+                )}
               </div>
+
+              {/* Refresh from selected resume's analysis */}
+              <div className="bg-[#111318] border border-[#27272A] p-2.5 rounded-xl space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-[#71717A] flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[15px] text-[#4F7DF3]">auto_awesome</span>
+                    Refresh from selected resume
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRefreshFromModalResume}
+                    className="text-xs text-[#4F7DF3] hover:underline font-semibold cursor-pointer shrink-0"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                {modalPrefillNotice && (
+                  <p className="text-[11px] text-[#A1A1AA] italic pl-5 animate-fade-in-up">
+                    {modalPrefillNotice}
+                  </p>
+                )}
+              </div>
+
+              {/* Duplicate Detection Alert */}
+              {currentModalDuplicate && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 text-xs text-amber-300 space-y-2 animate-fade-in-up">
+                  <div className="flex items-start gap-2.5">
+                    <span className="material-symbols-outlined text-amber-400 text-[18px] shrink-0 mt-0.5">
+                      warning
+                    </span>
+                    <div className="flex-1">
+                      <p className="font-semibold text-amber-200">Application Already Exists</p>
+                      <p className="text-[11px] text-amber-300/80 mt-0.5 leading-relaxed">
+                        An application for <strong className="text-white">{currentModalDuplicate.company}</strong> as{' '}
+                        <strong className="text-white">{currentModalDuplicate.jobTitle}</strong> is already in your tracker
+                        (Date: {currentModalDuplicate.applicationDate || 'Recent'}, Status: {currentModalDuplicate.status}).
+                      </p>
+                    </div>
+                  </div>
+
+                  {formDuplicateConfirm && (
+                    <div className="pt-2 border-t border-amber-500/20 flex items-center justify-between gap-3">
+                      <span className="text-[11px] text-amber-200">Save a duplicate record anyway?</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setFormDuplicateConfirm(false)}
+                          className="px-2.5 py-1 text-[11px] rounded-lg bg-transparent hover:bg-amber-500/10 text-amber-300 transition-colors cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleSaveNewApplication(e, true)}
+                          className="px-3 py-1 text-[11px] rounded-lg bg-amber-500 text-black font-semibold hover:bg-amber-400 transition-colors cursor-pointer"
+                        >
+                          Yes, Save Duplicate
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Company & Job Title */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -777,7 +1053,7 @@ export default function ApplicationsSection({ onNavigate }) {
                   type="submit"
                   className="bg-[#4F7DF3] hover:bg-[#4069D0] text-white text-xs font-label-caps tracking-wider px-5 py-2.5 rounded-xl transition-all shadow-[0_4px_16px_rgba(79,125,243,0.3)] cursor-pointer"
                 >
-                  Save Application
+                  {currentModalDuplicate && formDuplicateConfirm ? 'Save Duplicate' : 'Save Application'}
                 </button>
               </div>
             </form>
@@ -863,7 +1139,19 @@ export default function ApplicationsSection({ onNavigate }) {
               {/* Info Grid: Date, Match Score, Created, Updated */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#111318] border border-[#27272A] rounded-xl p-3.5 text-xs">
                 <div>
-                  <span className="text-[10px] text-[#71717A] block font-label-caps">APPLICATION DATE</span>
+                  <span className="text-[10px] text-[#71717A] block font-label-caps">
+                    {viewingApp.status === 'Saved'
+                      ? 'SAVED DATE'
+                      : viewingApp.status === 'Applied'
+                      ? 'APPLIED DATE'
+                      : viewingApp.status === 'Interview'
+                      ? 'INTERVIEW DATE'
+                      : viewingApp.status === 'Offer'
+                      ? 'OFFER DATE'
+                      : viewingApp.status === 'Rejected'
+                      ? 'REJECTED DATE'
+                      : 'APPLICATION DATE'}
+                  </span>
                   <span className="font-medium text-[#FAFAFA] mt-0.5 block">{formatDate(viewingApp.applicationDate)}</span>
                 </div>
                 <div>
@@ -881,6 +1169,14 @@ export default function ApplicationsSection({ onNavigate }) {
                   <span className="font-medium text-[#FAFAFA] mt-0.5 block">{formatRelativeTime(viewingApp.updatedAt)}</span>
                 </div>
               </div>
+
+              {/* Resume Used (if available) */}
+              {viewingApp.resumeName && (
+                <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-[#111318] border border-[#27272A] text-xs text-[#A1A1AA]">
+                  <span className="material-symbols-outlined text-[16px] text-[#4F7DF3]">description</span>
+                  <span>Resume used: <strong className="text-[#FAFAFA] font-medium">{viewingApp.resumeName}</strong></span>
+                </div>
+              )}
 
               {/* Job Description (if present) */}
               {viewingApp.jobDescription ? (

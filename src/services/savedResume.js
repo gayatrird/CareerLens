@@ -1,9 +1,6 @@
-import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import { auth } from './firebase.js';
 import { getResumeFingerprint } from './userStorage.js';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 // CareerLens — Saved Resume persistence (browser-local via IndexedDB).
 //
@@ -44,6 +41,38 @@ function resolveUid(explicitUid) {
 function getUserStoreKey(explicitUid) {
   const uid = resolveUid(explicitUid);
   return `saved_${uid}`;
+}
+
+function getFallbackStoreKey(explicitUid) {
+  const uid = resolveUid(explicitUid);
+  return `careerlens_saved_resumes_${uid}`;
+}
+
+function readFallbackRecords(explicitUid) {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(getFallbackStoreKey(explicitUid));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const uid = resolveUid(explicitUid);
+        return parsed.filter(isValidRecord).map((r) => normalizeRecord(r, uid)).slice(0, MAX_RESUMES);
+      }
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFallbackRecords(list, explicitUid) {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    localStorage.setItem(getFallbackStoreKey(explicitUid), JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function openDb() {
@@ -128,7 +157,7 @@ export function normalizeRecord(entry, uid) {
  * @returns {Promise<Array<{name: string, type: string, size: number, lastModified: number, text: string, file: Blob|null, savedAt: number, lastUsedAt: number, userId: string}>>}
  */
 export async function loadSavedResumes(explicitUid) {
-  if (!isSupported()) return [];
+  if (!isSupported()) return readFallbackRecords(explicitUid);
   const uid = resolveUid(explicitUid);
   const userKey = getUserStoreKey(uid);
 
@@ -186,8 +215,24 @@ export async function loadSavedResumes(explicitUid) {
  * @returns {Promise<boolean>}
  */
 export async function saveResume(entry, explicitUid) {
-  if (!isSupported() || !entry || !entry.name || typeof entry.text !== 'string') return false;
+  if (!entry || !entry.name || typeof entry.text !== 'string') return false;
   const uid = resolveUid(explicitUid);
+
+  if (!isSupported()) {
+    try {
+      const current = readFallbackRecords(uid);
+      const record = normalizeRecord(
+        { ...entry, userId: uid, savedAt: Date.now(), lastUsedAt: Date.now() },
+        uid
+      );
+      // Filter out old records that share the exact same content fingerprint ID
+      const rest = current.filter((r) => r.id !== record.id);
+      return writeFallbackRecords([record, ...rest].slice(0, MAX_RESUMES), uid);
+    } catch {
+      return false;
+    }
+  }
+
   const userKey = getUserStoreKey(uid);
 
   try {
@@ -196,8 +241,8 @@ export async function saveResume(entry, explicitUid) {
       { ...entry, userId: uid, savedAt: Date.now(), lastUsedAt: Date.now() },
       uid
     );
-    // Filter out old records that either share the exact same content ID or same filename
-    const rest = current.filter((r) => r.id !== record.id && r.name !== record.name);
+    // Filter out old records that share the exact same content ID (retaining distinct content with same filename)
+    const rest = current.filter((r) => r.id !== record.id);
     await writeRecords([record, ...rest].slice(0, MAX_RESUMES), userKey);
     return true;
   } catch {
@@ -212,8 +257,21 @@ export async function saveResume(entry, explicitUid) {
  * @returns {Promise<boolean>}
  */
 export async function markResumeUsed(identifier, explicitUid) {
-  if (!isSupported() || !identifier) return false;
+  if (!identifier) return false;
   const uid = resolveUid(explicitUid);
+
+  if (!isSupported()) {
+    try {
+      const current = readFallbackRecords(uid);
+      const entry = current.find((r) => r.id === identifier || r.name === identifier);
+      if (!entry) return false;
+      const rest = current.filter((r) => (entry.id ? r.id !== entry.id : r.name !== entry.name));
+      return writeFallbackRecords([normalizeRecord({ ...entry, lastUsedAt: Date.now() }, uid), ...rest], uid);
+    } catch {
+      return false;
+    }
+  }
+
   const userKey = getUserStoreKey(uid);
 
   try {
@@ -238,8 +296,19 @@ export async function markResumeUsed(identifier, explicitUid) {
  * @returns {Promise<boolean>}
  */
 export async function removeSavedResume(identifier, explicitUid) {
-  if (!isSupported()) return false;
   const uid = resolveUid(explicitUid);
+
+  if (!isSupported()) {
+    try {
+      if (!identifier) return writeFallbackRecords([], uid);
+      const current = readFallbackRecords(uid);
+      const next = current.filter((r) => r.id !== identifier && r.name !== identifier);
+      return writeFallbackRecords(next, uid);
+    } catch {
+      return false;
+    }
+  }
+
   const userKey = getUserStoreKey(uid);
 
   try {
@@ -264,6 +333,10 @@ export async function removeSavedResume(identifier, explicitUid) {
  * @returns {Promise<string>}
  */
 export async function extractTextFromPDF(arrayBuffer) {
+  const pdfjsLib = await import('pdfjs-dist');
+  if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+  }
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let fullText = '';
   for (let i = 1; i <= pdf.numPages; i++) {
