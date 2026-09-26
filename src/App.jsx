@@ -15,6 +15,7 @@ import InterviewSection from './components/EvidenceSection';
 import SettingsSection from './components/ChambersSection';
 import DashboardSection from './components/DashboardSection';
 import CareerNavigatorSection from './components/CareerNavigatorSection';
+import ApplicationsSection from './components/ApplicationsSection';
 import MatchScoreboard from './components/Scoreboard';
 import { analyzeWithAgent, generateHiringRecommendation, runDeepAtsScan, subscribeRateLimitRetry } from './services/hiringApi';
 import { computeJobMatch, detectJobDomain } from './services/jobMatch';
@@ -622,6 +623,12 @@ export default function App() {
           <InterviewSection
             key={`${user?.uid || 'anonymous'}_${selectedMockSession?.sessionId || 'default'}`}
             initialSession={selectedMockSession}
+          />
+        )}
+        {activeTab === 'APPLICATIONS' && (
+          <ApplicationsSection
+            key={user?.uid || 'anonymous'}
+            onNavigate={setActiveTab}
           />
         )}
 

@@ -219,6 +219,104 @@ export function setStoredUserMotion(enabled, explicitUid) {
   }
 }
 
+// ─── Job Applications Tracker ───────────────────────────────────────────────
+
+export function getStoredApplications(explicitUid) {
+  try {
+    const key = getStorageKey('job_applications', explicitUid);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export function setStoredApplications(data, explicitUid) {
+  try {
+    const key = getStorageKey('job_applications', explicitUid);
+    const list = Array.isArray(data) ? data : [];
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch (err) {
+    console.warn('Failed to store job applications', err);
+  }
+}
+
+export function addStoredApplication(appData, explicitUid) {
+  try {
+    const existing = getStoredApplications(explicitUid);
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
+
+    const company = (appData?.company || appData?.companyName || '').trim();
+    const jobTitle = (appData?.jobTitle || '').trim();
+
+    const newApp = {
+      id: 'app_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
+      company,
+      jobTitle,
+      jobDescription: (appData?.jobDescription || '').trim(),
+      location: (appData?.location || '').trim(),
+      applicationDate: appData?.applicationDate || today,
+      status: appData?.status || 'Saved',
+      matchScore: typeof appData?.matchScore === 'number' ? appData.matchScore : null,
+      notes: (appData?.notes || '').trim(),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const updatedList = [newApp, ...existing];
+    setStoredApplications(updatedList, explicitUid);
+    return newApp;
+  } catch (err) {
+    console.warn('Failed to add job application', err);
+    return null;
+  }
+}
+
+export function updateStoredApplication(id, updates, explicitUid) {
+  try {
+    const existing = getStoredApplications(explicitUid);
+    let updatedItem = null;
+    const now = new Date().toISOString();
+
+    const updatedList = existing.map((item) => {
+      if (item.id === id) {
+        updatedItem = {
+          ...item,
+          ...updates,
+          updatedAt: now,
+        };
+        return updatedItem;
+      }
+      return item;
+    });
+
+    if (updatedItem) {
+      setStoredApplications(updatedList, explicitUid);
+    }
+    return updatedItem;
+  } catch (err) {
+    console.warn('Failed to update job application', err);
+    return null;
+  }
+}
+
+export function deleteStoredApplication(id, explicitUid) {
+  try {
+    const existing = getStoredApplications(explicitUid);
+    const filtered = existing.filter((item) => item.id !== id);
+    setStoredApplications(filtered, explicitUid);
+    return filtered.length < existing.length;
+  } catch (err) {
+    console.warn('Failed to delete job application', err);
+    return false;
+  }
+}
+
 // ─── User Scoped Data Export & Wipe ───────────────────────────────────────────
 
 export function exportAllUserData(explicitUid) {
@@ -234,6 +332,7 @@ export function exportAllUserData(explicitUid) {
     lastAnalysis: getStoredLastAnalysis(uid),
     archives: getStoredArchives(uid),
     mockInterviews: getStoredMockInterviews(uid),
+    applications: getStoredApplications(uid),
   };
 }
 
@@ -242,6 +341,7 @@ export function clearAllUserData(explicitUid) {
     const uid = getUserUid(explicitUid);
     clearUserHistory(uid);
     localStorage.removeItem(getStorageKey('mock_interviews', uid));
+    localStorage.removeItem(getStorageKey('job_applications', uid));
     localStorage.removeItem(`careerlens_user_${uid}_reduce_motion`);
 
     // Clean user navigator caches

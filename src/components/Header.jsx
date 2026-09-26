@@ -69,6 +69,7 @@ export default function Header({ activeTab, setActiveTab }) {
             <button className={navClass('DOCKET')}    onClick={() => setActiveTab('DOCKET')}>ANALYZE</button>
             <button className={navClass('NAVIGATOR')} onClick={() => setActiveTab('NAVIGATOR')}>NAVIGATOR</button>
             <button className={navClass('EVIDENCE')}  onClick={() => setActiveTab('EVIDENCE')}>INTERVIEW</button>
+            <button className={navClass('APPLICATIONS')} onClick={() => setActiveTab('APPLICATIONS')}>APPLICATIONS</button>
             <button className={navClass('ARCHIVES')}  onClick={() => setActiveTab('ARCHIVES')}>HISTORY</button>
             <button className={navClass('CHAMBERS')}  onClick={() => setActiveTab('CHAMBERS')}>SETTINGS</button>
           </nav>

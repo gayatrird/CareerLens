@@ -340,7 +340,7 @@ html[data-theme="light"] .hover\:border-white\/\[0\.12\]:hover { border-color: #
 
 /* ── CLEAN LIGHT — inputs ── */
 html[data-theme="light"] textarea,
-html[data-theme="light"] input[type="text"],
+html[data-theme="light"] input,
 html[data-theme="light"] select {
   background-color: #FFFFFF !important;
   border-color: #E4E4E7 !important;
@@ -528,7 +528,7 @@ html[data-theme="navy"] .border-\[\#2D2F36\] { border-color: #1E2D4F !important;
 
 /* ── NAVY — inputs ── */
 html[data-theme="navy"] textarea,
-html[data-theme="navy"] input[type="text"],
+html[data-theme="navy"] input,
 html[data-theme="navy"] select {
   background-color: #0B132B !important;
   border-color: #1E2D4F !important;
@@ -545,3 +545,28 @@ html[data-theme="light"] div[class*="border-dashed"][class*="bg-"] {
 }
 div.border-dashed.group:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(79,125,243,0.15); }
 div.border-dashed.group:hover .material-symbols-outlined { transform: translateY(-2px) scale(1.05); }
+
+/* ── Modal Backdrop Overlays (Theme-Adaptive) ── */
+.modal-backdrop-overlay {
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+html[data-theme="light"] .modal-backdrop-overlay {
+  background-color: transparent !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+}
+
+html[data-theme="light"] .modal-backdrop-overlay > div {
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.14) !important;
+  border-color: #E4E4E7 !important;
+  background-color: #FFFFFF !important;
+}
+
+html[data-theme="navy"] .modal-backdrop-overlay {
+  background-color: rgba(11, 19, 43, 0.65) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}
